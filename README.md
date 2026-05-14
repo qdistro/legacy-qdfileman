@@ -59,7 +59,7 @@ pip install -e ".[test]"
 QT_QPA_PLATFORM=offscreen pytest tests/
 ```
 
-CI runs on Python 3.11–3.13 with `ruff check` on every push.
+`just lint` runs `ruff check` over the package and tests.
 
 ## Known limitations
 
