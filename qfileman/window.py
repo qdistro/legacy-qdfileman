@@ -148,54 +148,130 @@ class FileManagerWindow(QMainWindow):
         toolbar.addWidget(self.hidden_check)
 
     def _create_menu_bar(self) -> None:
+        """Populate the menubar and wire the Norton/Total-Commander key map.
+
+        The function-key bindings follow the long-standing Norton →
+        Total Commander → Krusader convention so muscle memory carries
+        over: F3=View, F4=Edit, F5=Copy, F6=Move, F7=NewDir, F8=Delete,
+        Alt+F5=Pack, Alt+F6=Unpack, Alt+F7=Find, Tab=switch pane,
+        Backspace=parent. Modern Qt/GTK conventions (Ctrl+Q quit,
+        Ctrl+F find, Ctrl+W close, Ctrl+, preferences, F2 rename)
+        coexist as additional shortcuts on the same actions.
+        """
         menubar = self.menuBar()
 
-        # File menu
-        file_menu = menubar.addMenu("File")
-        new_folder_action = QAction("New Folder", self)
-        new_folder_action.setShortcut("Ctrl+Shift+N")
+        # ---------------------------- File menu ----------------------------
+        file_menu = menubar.addMenu("&File")
+
+        new_folder_action = QAction("New &Folder", self)
+        new_folder_action.setShortcuts(["F7", "Ctrl+Shift+N"])
         new_folder_action.triggered.connect(self._new_folder)
         file_menu.addAction(new_folder_action)
-        open_action = QAction("Open", self)
+
+        new_file_action = QAction("New &Text File…", self)
+        new_file_action.setShortcut("Shift+F4")
+        new_file_action.triggered.connect(self._new_file)
+        file_menu.addAction(new_file_action)
+
+        open_action = QAction("&Open", self)
         open_action.setShortcut("Return")
         open_action.triggered.connect(self._open_selected)
         file_menu.addAction(open_action)
+
+        view_action = QAction("&View", self)
+        view_action.setShortcut("F3")
+        view_action.triggered.connect(self._quick_view)
+        file_menu.addAction(view_action)
+
+        edit_action = QAction("&Edit", self)
+        edit_action.setShortcut("F4")
+        edit_action.triggered.connect(self._edit_selected)
+        file_menu.addAction(edit_action)
+
         file_menu.addSeparator()
-        rename_action = QAction("Rename", self)
-        rename_action.setShortcut("F2")
+
+        copy_action = QAction("&Copy…", self)
+        copy_action.setShortcut("F5")
+        copy_action.triggered.connect(self._copy_selected)
+        file_menu.addAction(copy_action)
+
+        move_action = QAction("&Move…", self)
+        move_action.setShortcut("F6")
+        move_action.triggered.connect(self._move_selected)
+        file_menu.addAction(move_action)
+
+        rename_action = QAction("&Rename", self)
+        # F2 = modern convention; Shift+F6 = Total Commander.
+        rename_action.setShortcuts(["F2", "Shift+F6"])
         rename_action.triggered.connect(self._rename)
         file_menu.addAction(rename_action)
-        delete_action = QAction("Delete", self)
-        delete_action.setShortcut("Delete")
+
+        delete_action = QAction("&Delete", self)
+        delete_action.setShortcuts(["Delete", "F8"])
         delete_action.triggered.connect(self._delete)
         file_menu.addAction(delete_action)
+
         file_menu.addSeparator()
-        quit_action = QAction("Quit", self)
-        quit_action.setShortcut("Ctrl+Q")
+
+        pack_action = QAction("&Pack… (archive)", self)
+        pack_action.setShortcut("Alt+F5")
+        pack_action.triggered.connect(self._pack_selected)
+        file_menu.addAction(pack_action)
+
+        unpack_action = QAction("&Unpack… (extract)", self)
+        unpack_action.setShortcut("Alt+F6")
+        unpack_action.triggered.connect(self._unpack_selected)
+        file_menu.addAction(unpack_action)
+
+        file_menu.addSeparator()
+
+        quit_action = QAction("&Quit", self)
+        # F10 mirrors Norton/TC; Ctrl+Q is the GTK/Qt convention.
+        quit_action.setShortcuts(["Ctrl+Q", "F10"])
         quit_action.triggered.connect(self.close)
         file_menu.addAction(quit_action)
 
-        # Edit menu
-        edit_menu = menubar.addMenu("Edit")
-        find_action = QAction("Find…", self)
-        find_action.setShortcut("Ctrl+F")
+        # ---------------------------- Edit menu ----------------------------
+        edit_menu = menubar.addMenu("&Edit")
+
+        find_action = QAction("&Find…", self)
+        find_action.setShortcuts(["Ctrl+F", "Alt+F7"])
         find_action.triggered.connect(self._open_search_dialog)
         edit_menu.addAction(find_action)
+
         edit_menu.addSeparator()
-        prefs_action = QAction("Preferences…", self)
+
+        prefs_action = QAction("&Preferences…", self)
         prefs_action.setShortcut("Ctrl+,")
         prefs_action.triggered.connect(self._open_preferences)
         edit_menu.addAction(prefs_action)
 
-        # View menu — includes split actions. The "Show hidden" toggle
-        # is owned by the toolbar checkbox; duplicating it as a checkable
-        # menu action led to drift between the two and was removed.
-        view_menu = menubar.addMenu("View")
-        refresh_action = QAction("Refresh", self)
-        refresh_action.setShortcut("F5")
+        # ---------------------------- View menu ----------------------------
+        # The "Show hidden" toggle is owned by the toolbar checkbox;
+        # duplicating it as a checkable menu action led to drift between
+        # the two and was removed.
+        view_menu = menubar.addMenu("&View")
+
+        refresh_action = QAction("&Refresh", self)
+        # Ctrl+R = Total Commander's "re-read source"; F2 was the
+        # Norton refresh key but we use F2 for Rename per Windows
+        # convention.
+        refresh_action.setShortcuts(["Ctrl+R", "Shift+F5"])
         refresh_action.triggered.connect(self._refresh)
         view_menu.addAction(refresh_action)
+
+        size_action = QAction("Folder &Size…", self)
+        size_action.setShortcut("Ctrl+L")
+        size_action.triggered.connect(self._show_folder_size)
+        view_menu.addAction(size_action)
+
         view_menu.addSeparator()
+
+        swap_action = QAction("S&wap Panes", self)
+        swap_action.setShortcut("Ctrl+U")
+        swap_action.triggered.connect(self._swap_panes)
+        view_menu.addAction(swap_action)
+
         self.split_right_action = QAction("Split Right", self)
         self.split_right_action.setShortcut("Ctrl+Shift+L")
         self.split_right_action.triggered.connect(self._split_right)
@@ -209,19 +285,31 @@ class FileManagerWindow(QMainWindow):
         self.close_pane_action.triggered.connect(self._close_pane)
         view_menu.addAction(self.close_pane_action)
 
-        # Go menu
-        go_menu = menubar.addMenu("Go")
-        home_action = QAction("Home", self)
+        # ---------------------------- Go menu ------------------------------
+        go_menu = menubar.addMenu("&Go")
+        home_action = QAction("&Home", self)
         home_action.setShortcut("Alt+Home")
         home_action.triggered.connect(self._go_home)
         go_menu.addAction(home_action)
-        up_action = QAction("Parent Directory", self)
-        up_action.setShortcut("Alt+Up")
+        up_action = QAction("&Parent Directory", self)
+        # Alt+Up keeps modern muscle memory; Backspace matches Norton/TC.
+        up_action.setShortcuts(["Alt+Up", "Backspace"])
         up_action.triggered.connect(self._go_up)
         go_menu.addAction(up_action)
+        switch_action = QAction("Switch &Pane", self)
+        switch_action.setShortcut("Tab")
+        switch_action.triggered.connect(self._switch_pane)
+        go_menu.addAction(switch_action)
 
-        # Plugins menu
-        self.plugins_menu = menubar.addMenu("Plugins")
+        # ---------------------------- Plugins menu --------------------------
+        self.plugins_menu = menubar.addMenu("&Plugins")
+
+        # ---------------------------- Help menu -----------------------------
+        help_menu = menubar.addMenu("&Help")
+        about_action = QAction("&About", self)
+        about_action.setShortcut("F1")
+        about_action.triggered.connect(self._show_about)
+        help_menu.addAction(about_action)
 
     def _init_file_system_tree(self) -> None:
         self.fs_model = QFileSystemModel()
@@ -431,6 +519,197 @@ class FileManagerWindow(QMainWindow):
         path = self.fs_model.filePath(index)
         if os.path.isdir(path):
             self._update_path(path)
+
+    # ------------------------------------------ Total-Commander actions
+    def _selected_path(self) -> str | None:
+        """Return the currently-selected entry's path in the active pane."""
+        if self._active_pane is None:
+            return None
+        item = self._active_pane.file_list.currentItem()
+        if item is None:
+            return None
+        data = item.data(Qt.ItemDataRole.UserRole)
+        return data.get("path") if data else None
+
+    def _other_pane_path(self) -> str:
+        """Return the cwd of the next pane after the active one, or ~ if none."""
+        panes = self._split_root.find_panes()
+        if not panes or self._active_pane is None:
+            return os.path.expanduser("~")
+        try:
+            idx = panes.index(self._active_pane)
+        except ValueError:
+            return os.path.expanduser("~")
+        target = panes[(idx + 1) % len(panes)]
+        return target.current_path or os.path.expanduser("~")
+
+    def _quick_view(self) -> None:
+        """F3 — Quick View on the selected file via the embedded_viewer plugin."""
+        path = self._selected_path()
+        if not path or not os.path.isfile(path):
+            return
+        if self._plugin_manager is None:
+            return
+        plugin = self._plugin_manager.load("embedded_viewer")
+        if plugin is None:
+            return
+        # The plugin exposes its viewer through a private method; we
+        # call it directly rather than going through the menu indirection.
+        plugin._view(path)
+
+    def _edit_selected(self) -> None:
+        """F4 — Open the selected file in ``$EDITOR``, else ``xdg-open``."""
+        path = self._selected_path()
+        if not path or not os.path.isfile(path):
+            return
+        import shutil
+        import subprocess
+        editor = os.environ.get("VISUAL") or os.environ.get("EDITOR")
+        if editor and shutil.which(editor.split()[0]):
+            try:
+                subprocess.Popen([*editor.split(), path])
+                return
+            except OSError as e:
+                log.warning("editor launch failed: %s", e)
+        if shutil.which("xdg-open"):
+            try:
+                subprocess.Popen(["xdg-open", path])
+            except OSError as e:
+                log.warning("xdg-open failed: %s", e)
+
+    def _copy_selected(self) -> None:
+        """F5 — Copy the selected entry to a chosen destination directory."""
+        self._copy_or_move(move=False)
+
+    def _move_selected(self) -> None:
+        """F6 — Move the selected entry to a chosen destination directory."""
+        self._copy_or_move(move=True)
+
+    def _copy_or_move(self, *, move: bool) -> None:
+        from PyQt6.QtWidgets import QInputDialog, QMessageBox
+        import shutil
+
+        path = self._selected_path()
+        if not path:
+            return
+        default_dest = os.path.join(
+            self._other_pane_path(), os.path.basename(path)
+        )
+        title = "Move" if move else "Copy"
+        dest, ok = QInputDialog.getText(
+            self, f"{title} — {os.path.basename(path)}",
+            f"{title} to:", text=default_dest,
+        )
+        if not ok or not dest.strip():
+            return
+        dest = dest.strip()
+        try:
+            if move:
+                shutil.move(path, dest)
+            elif os.path.isdir(path):
+                shutil.copytree(path, dest)
+            else:
+                shutil.copy2(path, dest)
+        except (OSError, shutil.Error) as e:
+            QMessageBox.warning(self, title, f"{title} failed: {e}")
+            return
+        self._refresh()
+
+    def _new_file(self) -> None:
+        """Shift+F4 — Create an empty file and open it for editing."""
+        from PyQt6.QtWidgets import QInputDialog, QMessageBox
+        if self._active_pane is None:
+            return
+        name, ok = QInputDialog.getText(self, "New Text File", "Filename:")
+        if not (ok and name.strip()):
+            return
+        target = os.path.join(self._active_pane.current_path, name.strip())
+        try:
+            # Use O_CREAT|O_EXCL so we never clobber an existing file.
+            fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            os.close(fd)
+        except OSError as e:
+            QMessageBox.warning(self, "New Text File", f"Create failed: {e}")
+            return
+        self._refresh()
+        # Drop straight into the editor — that's the Norton/TC reflex.
+        item = None
+        try:
+            self._active_pane._select_path(target)
+        except AttributeError:
+            pass
+        self._edit_selected()
+
+    def _pack_selected(self) -> None:
+        """Alt+F5 — Hand the selected entry to the archive plugin's creator."""
+        path = self._selected_path()
+        if not path or self._plugin_manager is None:
+            return
+        plugin = self._plugin_manager.load("archive")
+        if plugin is None:
+            return
+        plugin._create_archive(path)
+
+    def _unpack_selected(self) -> None:
+        """Alt+F6 — Extract the selected archive via the archive plugin."""
+        path = self._selected_path()
+        if not path or self._plugin_manager is None:
+            return
+        plugin = self._plugin_manager.load("archive")
+        if plugin is None:
+            return
+        plugin._extract_to(path)
+
+    def _show_folder_size(self) -> None:
+        """Ctrl+L — Folder size of the active pane's current directory."""
+        if self._active_pane is None or self._plugin_manager is None:
+            return
+        plugin = self._plugin_manager.load("folder_size")
+        if plugin is None:
+            return
+        plugin._show(self._active_pane.current_path)
+
+    def _swap_panes(self) -> None:
+        """Ctrl+U — Swap the cwd of the active pane with the next one."""
+        panes = self._split_root.find_panes()
+        if len(panes) < 2 or self._active_pane is None:
+            return
+        try:
+            idx = panes.index(self._active_pane)
+        except ValueError:
+            return
+        other = panes[(idx + 1) % len(panes)]
+        a_path = self._active_pane.current_path
+        b_path = other.current_path
+        if a_path and b_path:
+            self._active_pane._update_path(b_path)
+            other._update_path(a_path)
+
+    def _switch_pane(self) -> None:
+        """Tab — Cycle keyboard focus through the panes."""
+        panes = self._split_root.find_panes()
+        if len(panes) < 2 or self._active_pane is None:
+            return
+        try:
+            idx = panes.index(self._active_pane)
+        except ValueError:
+            idx = -1
+        target = panes[(idx + 1) % len(panes)]
+        target.file_list.setFocus()
+        self._set_active_pane(target)
+
+    def _show_about(self) -> None:
+        """F1 — About dialog."""
+        from PyQt6.QtWidgets import QMessageBox
+        QMessageBox.about(
+            self, "About QFileMan",
+            "<b>QFileMan</b><br><br>"
+            "A dual-pane file manager with a plugin system inspired by "
+            "Total Commander, Krusader, and Double Commander.<br><br>"
+            "Function-key bindings follow the Norton / TC convention "
+            "(F3 View, F4 Edit, F5 Copy, F6 Move, F7 NewDir, F8 Delete, "
+            "Alt+F5 Pack, Alt+F6 Unpack, Alt+F7 Find).",
+        )
 
     # ------------------------------------------------ pane-backed props
     @property
