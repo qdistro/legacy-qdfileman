@@ -586,6 +586,11 @@ class FileManagerWindow(QMainWindow):
         self._copy_or_move(move=True)
 
     def _copy_or_move(self, *, move: bool) -> None:
+        """Route F5/F6 through the rsync runner so we get live progress
+        in the qdshell notification on every copy/move — the same wire
+        the rsync_sync plugin uses. Falls back to ``shutil`` when
+        ``rsync`` isn't on PATH (the menu hides itself otherwise but
+        the keyboard shortcut would still fire)."""
         from PyQt6.QtWidgets import QInputDialog, QMessageBox
         import shutil
 
@@ -603,16 +608,28 @@ class FileManagerWindow(QMainWindow):
         if not ok or not dest.strip():
             return
         dest = dest.strip()
-        try:
-            if move:
-                shutil.move(path, dest)
-            elif os.path.isdir(path):
-                shutil.copytree(path, dest)
-            else:
-                shutil.copy2(path, dest)
-        except (OSError, shutil.Error) as e:
-            QMessageBox.warning(self, title, f"{title} failed: {e}")
-            return
+
+        if shutil.which("rsync"):
+            from qfileman.plugins.builtin.rsync_sync import rsync_argv
+            from qfileman.plugins.builtin._runner import run_command_dialog
+            # rsync needs a trailing slash on a source directory to
+            # mean "the contents of"; without it we'd nest src/ inside
+            # dest/src/, which is not the copy semantics F5 implies.
+            source = path + "/" if os.path.isdir(path) else path
+            argv = rsync_argv(source, dest, move=move)
+            run_command_dialog(f"{title} {os.path.basename(path)}", argv)
+        else:
+            # No rsync: best-effort one-shot copy, no progress bar.
+            try:
+                if move:
+                    shutil.move(path, dest)
+                elif os.path.isdir(path):
+                    shutil.copytree(path, dest)
+                else:
+                    shutil.copy2(path, dest)
+            except (OSError, shutil.Error) as e:
+                QMessageBox.warning(self, title, f"{title} failed: {e}")
+                return
         self._refresh()
 
     def _new_file(self) -> None:

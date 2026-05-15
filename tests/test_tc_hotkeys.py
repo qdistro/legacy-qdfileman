@@ -154,58 +154,90 @@ def test_f3_view_triggers_quick_view_plugin(window, tmp_path, monkeypatch):
     assert called.get("path") == str(target)
 
 
-def test_f5_copy_action_copies_selected(window, tmp_path, monkeypatch):
-    """F5 should copy the selected entry to the prompted destination."""
+def _select_in_pane(window, target_path):
+    pane = window._active_pane
+    for i in range(pane.file_list.count()):
+        item = pane.file_list.item(i)
+        data = item.data(0x0100)
+        if data and data.get("path") == str(target_path):
+            pane.file_list.setCurrentItem(item)
+            return True
+    return False
+
+
+def test_f5_copy_action_runs_rsync(window, tmp_path, monkeypatch):
+    """F5 builds an rsync argv that copies (does not move) and feeds it to
+    the runner. We stub the runner so the modal dialog doesn't block."""
     src = tmp_path / "src.txt"
     src.write_text("payload")
     dest = tmp_path / "copy-of-src.txt"
 
     window._update_path(str(tmp_path))
     QApplication.processEvents()
-    pane = window._active_pane
-    for i in range(pane.file_list.count()):
-        item = pane.file_list.item(i)
-        data = item.data(0x0100)
-        if data and data.get("path") == str(src):
-            pane.file_list.setCurrentItem(item)
-            break
+    assert _select_in_pane(window, src)
 
-    # Stub the input dialog so the test is non-interactive.
     from PyQt6.QtWidgets import QInputDialog
     monkeypatch.setattr(
         QInputDialog, "getText",
         staticmethod(lambda *a, **kw: (str(dest), True)),
     )
-    actions = _walk_actions(window)
-    actions["Copy…"].trigger()
+
+    captured = {}
+
+    def fake_run(title, argv, cwd=None, *, notify=True, parent=None):
+        captured["title"] = title
+        captured["argv"] = list(argv)
+        # Actually do the copy so the post-action _refresh sees it.
+        import subprocess
+        return subprocess.run(argv).returncode
+
+    import qfileman.window as wmod
+    # The function is imported inside _copy_or_move, so patching the
+    # _runner attribute is enough — the in-function `from ... import`
+    # resolves through the module table at call time.
+    from qfileman.plugins.builtin import _runner
+    monkeypatch.setattr(_runner, "run_command_dialog", fake_run)
+
+    _walk_actions(window)["Copy…"].trigger()
+    assert "argv" in captured, "Copy did not invoke runner"
+    assert captured["argv"][0] == "rsync"
+    assert "--remove-source-files" not in captured["argv"]
     assert dest.exists()
     assert dest.read_text() == "payload"
     # Source must still be there — copy, not move.
     assert src.exists()
 
 
-def test_f6_move_action_moves_selected(window, tmp_path, monkeypatch):
+def test_f6_move_action_runs_rsync_remove_source(window, tmp_path, monkeypatch):
+    """F6 builds an rsync argv that adds --remove-source-files (the
+    long-standing rsync 'move-with-resume' idiom)."""
     src = tmp_path / "to-move.txt"
     src.write_text("payload")
     dest = tmp_path / "moved.txt"
 
     window._update_path(str(tmp_path))
     QApplication.processEvents()
-    pane = window._active_pane
-    for i in range(pane.file_list.count()):
-        item = pane.file_list.item(i)
-        data = item.data(0x0100)
-        if data and data.get("path") == str(src):
-            pane.file_list.setCurrentItem(item)
-            break
+    assert _select_in_pane(window, src)
 
     from PyQt6.QtWidgets import QInputDialog
     monkeypatch.setattr(
         QInputDialog, "getText",
         staticmethod(lambda *a, **kw: (str(dest), True)),
     )
-    actions = _walk_actions(window)
-    actions["Move…"].trigger()
+
+    captured = {}
+
+    def fake_run(title, argv, cwd=None, *, notify=True, parent=None):
+        captured["argv"] = list(argv)
+        import subprocess
+        return subprocess.run(argv).returncode
+
+    from qfileman.plugins.builtin import _runner
+    monkeypatch.setattr(_runner, "run_command_dialog", fake_run)
+
+    _walk_actions(window)["Move…"].trigger()
+    assert captured["argv"][0] == "rsync"
+    assert "--remove-source-files" in captured["argv"]
     assert dest.exists()
     assert not src.exists()
 
