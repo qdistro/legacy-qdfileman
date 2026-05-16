@@ -75,6 +75,16 @@ def main():
     window = FileManagerWindow()
     plugin_manager = PluginManager()
     setup_window(args, window, plugin_manager)
+
+    # qdistro App1 registration — caught so a missing SDK / bus never
+    # blocks the file manager from starting.
+    try:
+        from qfileman import qdistro_integration as _qdi
+        window._qdistro_receiver = _qdi.maybe_install(window)
+    except Exception as _qd_e:  # noqa: BLE001
+        print(f"[qfileman] qdistro App1 registration failed: {_qd_e}",
+              file=sys.stderr, flush=True)
+
     window.show()
 
     sys.exit(app.exec())
