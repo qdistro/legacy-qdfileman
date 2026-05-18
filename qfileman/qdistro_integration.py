@@ -1,6 +1,6 @@
 """Wire qfileman into the qdistro App1 launcher contract.
 
-On registration, qfileman claims ``com.qdistro.QFileMan.uid<NNNN>``
+On registration, qfileman claims ``org.qdistro.QFileMan.uid<NNNN>``
 on the session bus. Inbound payloads are saved as a file in the
 active pane's directory (auto-named by kind + timestamp) so a peer
 app's Send-To produces something the user can immediately point at.
@@ -132,7 +132,7 @@ def send_to_targets(*, kind: str = "text/plain") -> list[dict]:
     if _app_receiver is None:
         return []
     try:
-        self_service = f"com.qdistro.{APP_FRIENDLY_NAME}.uid{os.geteuid()}"
+        self_service = f"org.qdistro.{APP_FRIENDLY_NAME}.uid{os.geteuid()}"
         return _app_receiver.send_to_menu_targets(
             self_service=self_service, kind=kind)
     except Exception as e:  # noqa: BLE001
