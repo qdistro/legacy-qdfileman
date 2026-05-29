@@ -57,6 +57,19 @@ def test_new_plugins_load(name):
 # trash
 # ---------------------------------------------------------------------------
 
+@pytest.mark.cheat_aware(
+    protects="trash_argv passes the target as a list element after a `--` "
+    "end-of-options separator, so a path is never word-split or "
+    "interpreted as a flag",
+    severity="high",
+    cheats=[
+        "drop the `--` from the expected argv",
+        "relax the exact-list `==` to a membership/substring check",
+    ],
+    consequence="a path that starts with `-` (e.g. `--force`) or contains "
+    "spaces could be parsed as options/extra args — argument injection "
+    "into the trash backend",
+)
 def test_trash_argv_gio(monkeypatch):
     monkeypatch.setattr(tr_mod, "choose_backend",
                         lambda: ("gio", tr_mod._BACKENDS[0][1]))
@@ -236,6 +249,17 @@ def test_directory_size_handles_empty(tmp_path):
     assert fs_mod.directory_size(str(tmp_path)) == 0
 
 
+@pytest.mark.cheat_aware(
+    protects="directory_size uses lstat and does NOT follow symlinks, so a "
+    "size walk cannot be lured off-tree by a planted symlink",
+    severity="high",
+    cheats=[
+        "widen the `total < 1500` bound to absorb a followed-link size",
+        "remove the symlink from the fixture so the case is never exercised",
+    ],
+    consequence="a symlink-following size walk can be steered to traverse "
+    "and inflate over arbitrary targets outside the directory",
+)
 def test_directory_size_does_not_follow_symlinks(tmp_path):
     big = tmp_path / "big"
     big.write_bytes(b"x" * 1000)

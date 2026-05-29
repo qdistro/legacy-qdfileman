@@ -208,6 +208,18 @@ def test_f5_copy_action_runs_rsync(window, tmp_path, monkeypatch):
     assert src.exists()
 
 
+@pytest.mark.cheat_aware(
+    protects="Move (F6) only removes the source AFTER rsync copies it to the "
+    "destination (the dest must exist and the source must be gone)",
+    severity="critical",
+    cheats=[
+        "drop `assert dest.exists()` or `assert not src.exists()`",
+        "stop asserting --remove-source-files is in the argv",
+        "make fake_run skip the real subprocess so nothing is actually moved",
+    ],
+    consequence="a Move that deletes the user's source file without ever "
+    "writing the destination — irrecoverable data loss",
+)
 def test_f6_move_action_runs_rsync_remove_source(window, tmp_path, monkeypatch):
     """F6 builds an rsync argv that adds --remove-source-files (the
     long-standing rsync 'move-with-resume' idiom)."""

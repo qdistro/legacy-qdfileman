@@ -250,6 +250,17 @@ def test_file_model_delete_file(tmp_dir):
     assert not test_file.exists()
 
 
+@pytest.mark.cheat_aware(
+    protects="FileModel.delete recursively removes a directory and the "
+    "directory is actually gone afterward",
+    severity="critical",
+    cheats=[
+        "drop the `not test_dir.exists()` post-condition assertion",
+        "weaken to only assert the return value without checking the fs",
+    ],
+    consequence="a 'successful' delete that leaves data behind (or the "
+    "inverse: a delete path that silently fails) ships unnoticed",
+)
 def test_file_model_delete_directory(tmp_dir):
     """Test deleting a directory."""
     test_dir = tmp_dir / "to_delete_dir"
