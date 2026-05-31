@@ -28,7 +28,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from qfileman.file_model import FileModel
+from qfileman.file_model import FileModel, is_safe_rename_name
 
 
 log = logging.getLogger(__name__)
@@ -307,6 +307,12 @@ class FilePane(QWidget):
         )
         if not (ok and new_name) or new_name == old_name:
             return
+        if not is_safe_rename_name(new_name):
+            QMessageBox.warning(
+                self, "Error",
+                "Rename target must be a single file name."
+            )
+            return
         new_path = os.path.join(os.path.dirname(old_path), new_name)
         try:
             os.rename(old_path, new_path)
@@ -349,4 +355,3 @@ class FilePane(QWidget):
             self._refresh()
         except (OSError, subprocess.TimeoutExpired) as e:
             QMessageBox.warning(self, "Error", f"Could not move to Trash: {e}")
-

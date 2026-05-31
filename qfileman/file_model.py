@@ -10,6 +10,19 @@ from datetime import datetime
 log = logging.getLogger(__name__)
 
 
+def is_safe_rename_name(name) -> bool:
+    """Return True when rename input is a single basename."""
+    if not isinstance(name, str) or not name:
+        return False
+    p = Path(name)
+    return (
+        "\x00" not in name
+        and not p.is_absolute()
+        and p.name == name
+        and name not in (".", "..")
+    )
+
+
 class FileItem:
     """Represents a file or directory in the file manager."""
 
@@ -259,6 +272,10 @@ class FileModel:
 
     def rename(self, old_path, new_name):
         """Rename a file or directory."""
+        if not is_safe_rename_name(new_name):
+            log.warning("rename(%s -> %s) rejected: unsafe target name",
+                        old_path, new_name)
+            return False
         old = Path(old_path)
         new = old.parent / new_name
         try:

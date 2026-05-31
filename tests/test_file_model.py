@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from qfileman.file_model import FileItem, FileModel
+from qfileman.file_model import FileItem, FileModel, is_safe_rename_name
 
 
 def test_file_item_name(tmp_dir):
@@ -296,6 +296,20 @@ def test_file_model_rename_missing_logs_warning(tmp_dir, caplog):
     with caplog.at_level("WARNING", logger="qfileman.file_model"):
         assert model.rename(str(tmp_dir / "no_such"), "whatever.txt") is False
     assert any("rename" in r.message for r in caplog.records)
+
+
+@pytest.mark.parametrize("bad_name", ["../escape.txt", "sub/name.txt", "/tmp/escape.txt", ".", ".."])
+def test_file_model_rename_rejects_non_basename(tmp_dir, bad_name):
+    src = tmp_dir / "old_name.txt"
+    src.write_text("rename me")
+    model = FileModel(str(tmp_dir))
+    assert model.rename(str(src), bad_name) is False
+    assert src.exists()
+
+
+def test_is_safe_rename_name_rejects_nul_and_accepts_basename():
+    assert is_safe_rename_name("new_name.txt") is True
+    assert is_safe_rename_name("bad\x00name") is False
 
 
 def test_file_model_view_state_properties_default(tmp_dir):

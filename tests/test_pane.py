@@ -179,6 +179,24 @@ def test_pane_rename_cancel_is_noop(pane, tmp_dir):
     assert src.exists()
 
 
+def test_pane_rename_rejects_path_separator(pane, tmp_dir):
+    src = tmp_dir / "keep.txt"
+    src.write_text("x")
+    pane._update_path(str(tmp_dir))
+    for i in range(pane.file_list.count()):
+        if pane.file_list.item(i).text() == "keep.txt":
+            pane.file_list.setCurrentRow(i)
+            break
+    with patch(
+        "qfileman.pane.QInputDialog.getText",
+        return_value=("../escape.txt", True),
+    ), patch("qfileman.pane.QMessageBox.warning") as warning:
+        pane._rename()
+    assert src.exists()
+    assert not (tmp_dir.parent / "escape.txt").exists()
+    warning.assert_called_once()
+
+
 def test_pane_new_folder_creates_directory(pane, tmp_dir):
     pane._update_path(str(tmp_dir))
     with patch(
