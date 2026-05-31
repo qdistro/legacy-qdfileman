@@ -331,6 +331,29 @@ def test_delete_file(window, tmp_dir):
     assert "to_delete.txt" not in names
 
 
+def test_delete_file_warns_when_no_trash_backend(window, tmp_dir):
+    """Default delete should not fall back to permanent deletion."""
+    test_file = tmp_dir / "to_delete.txt"
+    test_file.write_text("delete me")
+
+    window._update_path(str(tmp_dir))
+    for i in range(window.file_list.count()):
+        if window.file_list.item(i).text() == "to_delete.txt":
+            window.file_list.setCurrentRow(i)
+            break
+
+    with patch('qfileman.pane.QMessageBox.question', return_value=QMessageBox.StandardButton.Yes), \
+            patch('qfileman.plugins.builtin.trash.trash_argv', return_value=None), \
+            patch('qfileman.pane.QMessageBox.warning') as warn, \
+            patch('qfileman.pane.subprocess.run') as run:
+        window._delete()
+
+    assert test_file.exists()
+    run.assert_not_called()
+    warn.assert_called_once()
+    assert "No system trash backend" in warn.call_args.args[2]
+
+
 def test_delete_directory(window, tmp_dir):
     """Test moving a directory to trash."""
     test_dir = tmp_dir / "to_delete_dir"
