@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 import os
-import shutil
 import subprocess
 
 from PyQt6.QtCore import Qt, QSize, pyqtSignal
@@ -267,7 +266,7 @@ class FilePane(QWidget):
         rename_action.triggered.connect(self._rename)
         menu.addAction(rename_action)
 
-        delete_action = QAction("Delete", self)
+        delete_action = QAction("Move to Trash", self)
         delete_action.triggered.connect(self._delete)
         menu.addAction(delete_action)
 
@@ -325,19 +324,29 @@ class FilePane(QWidget):
 
         reply = QMessageBox.question(
             self,
-            "Delete",
-            f"Are you sure you want to delete '{name}'?",
+            "Move to Trash",
+            f"Move '{name}' to Trash?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
         try:
-            if os.path.isdir(path):
-                shutil.rmtree(path)
-            else:
-                os.remove(path)
+            from qfileman.plugins.builtin.trash import trash_argv
+            argv = trash_argv(path)
+            if argv is None:
+                QMessageBox.warning(
+                    self,
+                    "Move to Trash",
+                    "No system trash backend is available. Use the Trash plugin "
+                    "or remove the file outside QFileMan for permanent deletion.",
+                )
+                return
+            result = subprocess.run(
+                argv, capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode != 0:
+                raise OSError(result.stderr.strip() or result.stdout.strip())
             self._refresh()
-        except OSError as e:
-            QMessageBox.warning(self, "Error", f"Could not delete: {e}")
-
+        except (OSError, subprocess.TimeoutExpired) as e:
+            QMessageBox.warning(self, "Error", f"Could not move to Trash: {e}")
 

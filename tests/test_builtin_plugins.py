@@ -70,17 +70,22 @@ def test_detect_format(path, expected):
 
 def test_extract_argv_tar():
     argv = archive_mod.extract_argv("/a/b.tar.gz", "/dst")
-    assert argv == ["tar", "-xf", "/a/b.tar.gz", "-C", "/dst"]
+    assert argv == ["tar", "--keep-old-files", "-xf", "/a/b.tar.gz", "-C", "/dst"]
 
 
 def test_extract_argv_zip():
     argv = archive_mod.extract_argv("/a/b.zip", "/dst")
-    assert argv == ["unzip", "-o", "/a/b.zip", "-d", "/dst"]
+    assert argv == ["unzip", "-n", "/a/b.zip", "-d", "/dst"]
 
 
 def test_extract_argv_7z():
     argv = archive_mod.extract_argv("/a/b.7z", "/dst")
-    assert argv == ["7z", "x", "-o/dst", "-y", "/a/b.7z"]
+    assert argv == ["7z", "x", "-o/dst", "-aos", "/a/b.7z"]
+
+
+def test_extract_argv_rar_does_not_overwrite():
+    argv = archive_mod.extract_argv("/a/b.rar", "/dst")
+    assert argv == ["unrar", "x", "-o-", "/a/b.rar", "/dst/"]
 
 
 def test_extract_argv_unknown():
@@ -175,6 +180,20 @@ def test_lftp_argv_file_upload(tmp_path):
     assert "/incoming/" in script
     assert "put" in script
     assert "thing.txt" in script
+
+
+def test_lftp_argv_rejects_password_in_url(tmp_path):
+    f = tmp_path / "thing.txt"
+    f.write_text("x")
+    assert rc_mod.lftp_argv(str(f), "ftp://user:pw@host/incoming/") is None
+
+
+def test_lftp_argv_allows_user_without_password(tmp_path):
+    f = tmp_path / "thing.txt"
+    f.write_text("x")
+    argv = rc_mod.lftp_argv(str(f), "ftp://user@host/incoming/")
+    assert argv is not None
+    assert argv[-1] == "ftp://user@host"
 
 
 def test_lftp_argv_rejects_non_ftp():

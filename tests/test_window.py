@@ -250,9 +250,9 @@ def test_window_context_menu(window, tmp_dir):
             elif isinstance(action, str):
                 added_texts.append(action)
 
-        # File item should have Rename, Delete, Copy Path but NOT Open
+        # File item should have Rename, Move to Trash, Copy Path but NOT Open
         assert "Rename" in added_texts, f"Rename should be in menu, got {added_texts}"
-        assert "Delete" in added_texts, f"Delete should be in menu, got {added_texts}"
+        assert "Move to Trash" in added_texts, f"Move to Trash should be in menu, got {added_texts}"
         assert "Copy Path" in added_texts, f"Copy Path should be in menu, got {added_texts}"
         assert "Open" not in added_texts, f"Open should NOT be in menu for file, got {added_texts}"
 
@@ -290,15 +290,15 @@ def test_window_context_menu_directory(window, tmp_dir):
             elif isinstance(action, str):
                 added_texts.append(action)
 
-        # Directory item should have Open in addition to Rename, Delete, Copy Path
+        # Directory item should have Open in addition to Rename, Move to Trash, Copy Path
         assert "Open" in added_texts, f"Open should be in menu for directory, got {added_texts}"
         assert "Rename" in added_texts, f"Rename should be in menu, got {added_texts}"
-        assert "Delete" in added_texts, f"Delete should be in menu, got {added_texts}"
+        assert "Move to Trash" in added_texts, f"Move to Trash should be in menu, got {added_texts}"
         assert "Copy Path" in added_texts, f"Copy Path should be in menu, got {added_texts}"
 
 
 def test_delete_file(window, tmp_dir):
-    """Test deleting a file."""
+    """Test moving a file to trash."""
     test_file = tmp_dir / "to_delete.txt"
     test_file.write_text("delete me")
 
@@ -310,8 +310,17 @@ def test_delete_file(window, tmp_dir):
             window.file_list.setCurrentRow(i)
             break
 
-    # Monkeypatch QMessageBox.question to return Yes
-    with patch('qfileman.pane.QMessageBox.question', return_value=QMessageBox.StandardButton.Yes):
+    def fake_run(argv, capture_output, text, timeout):
+        test_file.unlink()
+        class Result:
+            returncode = 0
+            stderr = ""
+            stdout = ""
+        return Result()
+
+    with patch('qfileman.pane.QMessageBox.question', return_value=QMessageBox.StandardButton.Yes), \
+            patch('qfileman.plugins.builtin.trash.trash_argv', return_value=["true"]), \
+            patch('qfileman.pane.subprocess.run', side_effect=fake_run):
         window._delete()
 
     # File should be gone
@@ -323,7 +332,7 @@ def test_delete_file(window, tmp_dir):
 
 
 def test_delete_directory(window, tmp_dir):
-    """Test deleting a directory."""
+    """Test moving a directory to trash."""
     test_dir = tmp_dir / "to_delete_dir"
     test_dir.mkdir()
 
@@ -335,8 +344,17 @@ def test_delete_directory(window, tmp_dir):
             window.file_list.setCurrentRow(i)
             break
 
-    # Monkeypatch QMessageBox.question to return Yes
-    with patch('qfileman.pane.QMessageBox.question', return_value=QMessageBox.StandardButton.Yes):
+    def fake_run(argv, capture_output, text, timeout):
+        test_dir.rmdir()
+        class Result:
+            returncode = 0
+            stderr = ""
+            stdout = ""
+        return Result()
+
+    with patch('qfileman.pane.QMessageBox.question', return_value=QMessageBox.StandardButton.Yes), \
+            patch('qfileman.plugins.builtin.trash.trash_argv', return_value=["true"]), \
+            patch('qfileman.pane.subprocess.run', side_effect=fake_run):
         window._delete()
 
     # Directory should be gone

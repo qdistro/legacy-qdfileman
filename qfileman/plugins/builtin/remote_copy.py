@@ -4,12 +4,14 @@ Adds *Send via SCP / SFTP / FTP* entries to the context menu. The user
 is prompted for a destination of the form ``user@host:/remote/path``
 (``host:/path`` is also accepted; user is read from ``$LOGNAME`` /
 ``$USER`` by the underlying tool). FTP destinations are accepted in the
-form ``ftp://[user[:password]@]host/path`` and copied with ``lftp``.
+form ``ftp://[user@]host/path`` and copied with ``lftp``.
 
 This plugin does not hold credentials. SSH-based transfers rely on
 ``ssh-agent`` or interactive prompts in a terminal; if you need a
-password-prompt GUI, configure ``SSH_ASKPASS``. FTP password handling
-is intentionally left to ``lftp`` so it doesn't pass through QFileMan.
+password-prompt GUI, configure ``SSH_ASKPASS``. FTP passwords are not
+accepted in URLs because they would be visible in process argv and the
+command dialog; use lftp's normal interactive/auth config mechanisms
+instead.
 
 Command builders are pure functions so the dispatch logic is testable
 without spawning any process.
@@ -20,6 +22,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+from urllib.parse import urlsplit
 
 from qfileman.plugin import MenuProvider
 
@@ -72,17 +75,25 @@ def lftp_argv(source: str, dest: str) -> list[str] | None:
     """Build an ``lftp -e ...`` command to upload ``source`` to an FTP URL.
 
     ``dest`` must start with ``ftp://`` or ``ftps://`` and may include a
-    user, password, and remote path component:
-    ``ftp://user:pw@host/dir/`` — the trailing slash means "into this
+    user and remote path component:
+    ``ftp://user@host/dir/`` — the trailing slash means "into this
     directory"; without it, ``dest`` is treated as the target filename.
     """
     if not is_ftp_dest(dest):
+        return None
+    parsed = urlsplit(dest)
+    if parsed.password is not None:
         return None
     # Strip the scheme + creds to derive a base URL and a remote target.
     m = re.match(r"^(ftps?)://([^/]+)(/.*)?$", dest, re.IGNORECASE)
     if not m:
         return None
     scheme, authority, remote = m.group(1), m.group(2), m.group(3) or "/"
+    if "@" in authority:
+        userinfo, _, host = authority.rpartition("@")
+        if ":" in userinfo:
+            return None
+        authority = f"{userinfo}@{host}"
     base = f"{scheme}://{authority}"
     if remote.endswith("/"):
         remote_dir = remote
@@ -150,14 +161,16 @@ class RemoteCopyPlugin(MenuProvider):
     def _send_ftp(self, path: str) -> None:
         dest = self._prompt(
             "Send via FTP",
-            "Destination (ftp://[user[:pw]@]host/dir/):",
+            "Destination (ftp://[user@]host/dir/):",
             "ftp://host/",
         )
         if not dest:
             return
         argv = lftp_argv(path, dest)
         if argv is None:
-            self._warn("Destination must be an ftp:// or ftps:// URL.")
+            self._warn(
+                "Destination must be an ftp:// or ftps:// URL without a password."
+            )
             return
         self._run("lftp", "FTP " + os.path.basename(path), argv)
 

@@ -62,14 +62,16 @@ def extract_argv(path: str, dest_dir: str) -> list[str] | None:
     if fmt.startswith("tar"):
         # ``tar`` auto-detects the compression with -a/--auto-compress,
         # but ``-xf`` alone has handled all the listed variants for years.
-        return ["tar", "-xf", path, "-C", dest_dir]
+        # Keep existing files instead of clobbering them. Archive entry
+        # validation still belongs in a future in-process/staging extractor.
+        return ["tar", "--keep-old-files", "-xf", path, "-C", dest_dir]
     if fmt == "zip":
-        return ["unzip", "-o", path, "-d", dest_dir]
+        return ["unzip", "-n", path, "-d", dest_dir]
     if fmt == "7z":
-        return ["7z", "x", f"-o{dest_dir}", "-y", path]
+        return ["7z", "x", f"-o{dest_dir}", "-aos", path]
     if fmt == "rar":
         # ``unrar`` is the canonical extractor; ``7z`` can also read rar.
-        return ["unrar", "x", "-o+", path, dest_dir + os.sep]
+        return ["unrar", "x", "-o-", path, dest_dir + os.sep]
     return None
 
 
