@@ -141,12 +141,25 @@ def test_pane_delete_confirms_and_removes(pane, tmp_dir):
         if pane.file_list.item(i).text() == "delete_me.txt":
             pane.file_list.setCurrentRow(i)
             break
+    def fake_run(argv, capture_output, text, timeout):
+        victim.unlink()
+        class Result:
+            returncode = 0
+            stderr = ""
+            stdout = ""
+        return Result()
+
     with patch(
         "qfileman.pane.QMessageBox.question",
         return_value=QMessageBox.StandardButton.Yes,
-    ):
+    ), patch(
+        "qfileman.plugins.builtin.trash.trash_argv", return_value=["true"]
+    ), patch(
+        "qfileman.pane.subprocess.run", side_effect=fake_run
+    ) as run:
         pane._delete()
     assert not victim.exists()
+    run.assert_called_once()
 
 
 def test_pane_rename_via_dialog(pane, tmp_dir):
