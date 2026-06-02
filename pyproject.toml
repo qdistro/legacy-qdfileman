@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68.0"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "qfileman"
@@ -21,6 +21,16 @@ test = [
 
 [project.scripts]
 qfileman = "qfileman.__main__:main"
+
+# Desktop integration assets (.desktop launcher, AppStream metainfo, icon).
+# Without these a source/wheel install gives a CLI wrapper but never registers
+# qfileman in the shell launcher, AppStream catalog, or icon theme. data-files
+# lands them under <prefix>/share/... for both `pip install --prefix=...` and
+# wheel installs, so the packaging dry-run can assert they exist.
+[tool.setuptools.data-files]
+"share/applications" = ["qfileman.desktop"]
+"share/metainfo" = ["qfileman.metainfo.xml"]
+"share/icons/hicolor/scalable/apps" = ["icons/qfileman.svg"]
 
 [tool.setuptools.packages.find]
 where = ["."]
