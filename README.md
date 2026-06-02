@@ -2,6 +2,17 @@
 
 Qt file manager with plugin support, inspired by qnotebook and qterminator.
 
+## Role in qdistro
+
+qfileman is the first-party file manager for qdistro. Its job is to provide a
+modifiable PyQt file surface that can eventually participate in qdistro's silo,
+permission, and handoff model without depending on a large external desktop
+environment.
+
+Today it is still mostly a standalone Qt file manager. Treat qdistro policy
+integration, launcher assets, and hardened path handling as active follow-up
+areas when packaging it for daily-driver images.
+
 ## Features
 
 - Sidebar tree view paired with a list/grid file pane
