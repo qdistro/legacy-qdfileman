@@ -1,8 +1,23 @@
+# Python
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyc
 *$py.class
 *.so
 .Python
+.pytest_cache/
+.hypothesis/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Build & packaging (setuptools, wheel, etc.)
 build/
 develop-eggs/
 dist/
@@ -18,7 +33,21 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-.pytest_cache/
-.hypothesis/
-*.toml
+*.whl
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editor & IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.cache/
+.zed
+
+# Configuration
 !pyproject.toml
