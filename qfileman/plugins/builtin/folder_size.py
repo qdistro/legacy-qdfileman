@@ -24,17 +24,28 @@ from qfileman.plugin import MenuProvider
 log = logging.getLogger(__name__)
 
 
-def directory_size(path: str, *, follow_symlinks: bool = False) -> int:
+def directory_size(
+    path: str,
+    *,
+    follow_symlinks: bool = False,
+    is_cancelled: Callable[[], bool] | None = None,
+) -> int:
     """Return the total byte size of ``path``, recursing into subdirs.
 
     Errors from individual ``stat`` / ``scandir`` calls are swallowed
     rather than propagated; that matches the behaviour of ``du`` and
     avoids breaking a long walk because of one permissions-denied
     directory.
+
+    ``is_cancelled``, when supplied, is polled once per directory; if it
+    returns ``True`` the walk stops and the partial total accumulated so
+    far is returned, so a worker thread can abandon a huge tree promptly.
     """
     total = 0
     stack: list[str] = [path]
     while stack:
+        if is_cancelled is not None and is_cancelled():
+            break
         current = stack.pop()
         try:
             it = os.scandir(current)
@@ -73,12 +84,22 @@ def format_size(n: int) -> str:
     return f"{value:.1f} EiB"
 
 
-def child_sizes(path: str) -> list[tuple[str, int, bool]]:
+def child_sizes(
+    path: str,
+    *,
+    is_cancelled: Callable[[], bool] | None = None,
+    on_progress: Callable[[str], None] | None = None,
+) -> list[tuple[str, int, bool]]:
     """Return ``(name, size, is_dir)`` for each immediate child of ``path``.
 
     Children that error out during stat/scan are skipped silently.
     Sizes for subdirectories are recursive (call :func:`directory_size`).
     Order follows :func:`os.scandir` (unspecified).
+
+    ``is_cancelled`` is polled before each child and threaded into the
+    recursive sub-walk; on cancel the children gathered so far are returned.
+    ``on_progress``, if given, is called with each child's name as it is
+    about to be measured, so a worker can report which entry it's on.
     """
     out: list[tuple[str, int, bool]] = []
     try:
@@ -87,9 +108,17 @@ def child_sizes(path: str) -> list[tuple[str, int, bool]]:
         return out
     with it:
         for entry in it:
+            if is_cancelled is not None and is_cancelled():
+                break
+            if on_progress is not None:
+                on_progress(entry.name)
             try:
                 if entry.is_dir(follow_symlinks=False):
-                    out.append((entry.name, directory_size(entry.path), True))
+                    out.append((
+                        entry.name,
+                        directory_size(entry.path, is_cancelled=is_cancelled),
+                        True,
+                    ))
                 else:
                     size = entry.stat(follow_symlinks=False).st_size
                     out.append((entry.name, size, False))
@@ -110,13 +139,47 @@ class FolderSizePlugin(MenuProvider):
         return [("Folder Size…", self._show)]
 
     def _show(self, path: str) -> None:
+        """Walk ``path`` off the GUI thread, then show the size breakdown.
+
+        The recursive ``child_sizes`` scan can take a long time on a big
+        tree, so it runs on a :class:`~qfileman.worker.ProgressRunner` worker
+        with a cancellable progress dialog; the result table is only built
+        once the walk completes (cancel just dismisses the progress dialog).
+        """
+        from qfileman.worker import ProgressRunner
+
+        def work(cancel, progress):
+            def report(name: str) -> None:
+                progress(0, -1, name)
+
+            children = child_sizes(
+                path, is_cancelled=cancel.is_set, on_progress=report
+            )
+            cancel.raise_if_cancelled()
+            return children
+
+        def on_result(children: list[tuple[str, int, bool]]) -> None:
+            self._show_results(path, children)
+
+        # Hold the runner alive on the plugin instance until it finishes.
+        runner = ProgressRunner(
+            work,
+            title="Folder Size",
+            label=f"Scanning {os.path.basename(path) or path}…",
+            on_result=on_result,
+        )
+        self._runner = runner
+        runner.start()
+
+    def _show_results(
+        self, path: str, children: list[tuple[str, int, bool]]
+    ) -> None:
         from PyQt6.QtCore import Qt
         from PyQt6.QtWidgets import (
             QDialog, QDialogButtonBox, QLabel, QTreeWidget, QTreeWidgetItem,
             QVBoxLayout,
         )
 
-        children = child_sizes(path)
         total = sum(s for _n, s, _d in children)
 
         dlg = QDialog()

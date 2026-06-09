@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+from typing import Callable
 
 from qfileman.plugin import MenuProvider
 
@@ -21,16 +22,40 @@ log = logging.getLogger(__name__)
 _CHUNK = 1 << 20  # 1 MiB
 
 
-def hash_file(path: str, algorithm: str = "sha256") -> str:
+def hash_file(
+    path: str,
+    algorithm: str = "sha256",
+    *,
+    is_cancelled: Callable[[], bool] | None = None,
+    on_progress: Callable[[int, int], None] | None = None,
+) -> str:
     """Return the hex digest of ``path`` using ``algorithm``.
 
     ``algorithm`` is anything :func:`hashlib.new` accepts. Raises
     ``OSError`` if the file can't be read.
+
+    ``is_cancelled`` is polled per 1 MiB chunk; on cancel a
+    :class:`qfileman.worker.Cancelled` is raised so a worker thread unwinds
+    cleanly without delivering a half-computed digest. ``on_progress`` is
+    called with ``(bytes_done, total_bytes)`` after each chunk; ``total`` is
+    ``-1`` when the file size can't be determined up front.
     """
     h = hashlib.new(algorithm)
+    try:
+        total = os.path.getsize(path)
+    except OSError:
+        total = -1
+    done = 0
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(_CHUNK), b""):
+            if is_cancelled is not None and is_cancelled():
+                from qfileman.worker import Cancelled
+
+                raise Cancelled()
             h.update(chunk)
+            done += len(chunk)
+            if on_progress is not None:
+                on_progress(done, total)
     return h.hexdigest()
 
 
@@ -50,17 +75,50 @@ class ChecksumPlugin(MenuProvider):
         ]
 
     def _show(self, path: str, algorithm: str) -> None:
+        """Hash ``path`` off the GUI thread, then show the digest.
+
+        Streaming a multi-gigabyte file through ``hashlib`` can take many
+        seconds, so it runs on a :class:`~qfileman.worker.ProgressRunner`
+        worker with a cancellable, byte-accurate progress bar; the digest
+        dialog only appears once hashing completes.
+        """
+        from qfileman.worker import ProgressRunner
+
+        def work(cancel, progress):
+            def report(done: int, total: int) -> None:
+                progress(done, total, "")
+
+            return hash_file(
+                path,
+                algorithm,
+                is_cancelled=cancel.is_set,
+                on_progress=report,
+            )
+
+        def on_result(digest: str) -> None:
+            self._show_digest(path, algorithm, digest)
+
+        def on_error(message: str) -> None:
+            log.warning("hash %s failed: %s", path, message)
+            from PyQt6.QtWidgets import QMessageBox
+
+            QMessageBox.warning(None, "Checksum", f"Read failed: {message}")
+
+        runner = ProgressRunner(
+            work,
+            title=f"{algorithm.upper()} checksum",
+            label=f"Hashing {os.path.basename(path)}…",
+            on_result=on_result,
+            on_error=on_error,
+        )
+        self._runner = runner
+        runner.start()
+
+    def _show_digest(self, path: str, algorithm: str, digest: str) -> None:
         from PyQt6.QtWidgets import (
             QApplication, QDialog, QDialogButtonBox, QLabel, QLineEdit,
             QPushButton, QVBoxLayout,
         )
-        try:
-            digest = hash_file(path, algorithm)
-        except OSError as e:
-            log.warning("hash %s failed: %s", path, e)
-            from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.warning(None, "Checksum", f"Read failed: {e}")
-            return
 
         dlg = QDialog()
         dlg.setWindowTitle(f"{algorithm.upper()} — {os.path.basename(path)}")
