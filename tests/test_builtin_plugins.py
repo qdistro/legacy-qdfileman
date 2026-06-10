@@ -9,7 +9,10 @@ on the box running the suite.
 from __future__ import annotations
 
 import hashlib
+import io
 import os
+import tarfile
+import zipfile
 from unittest.mock import patch
 
 import pytest
@@ -125,6 +128,240 @@ def test_archive_menu_items_for_plain_file(tmp_path):
     labels = [label for label, _cb in plugin.get_menu_items(str(f))]
     assert "Extract Here" not in labels
     assert "Create Archive..." in labels
+
+
+# ---------------------------------------------------------------------------
+# archive — pre-extraction path containment (defense-in-depth)
+# ---------------------------------------------------------------------------
+
+
+def _write_tar(path, entries):
+    """``entries`` = list of (name, kind, linkname). kind in {file,sym,lnk}."""
+    with tarfile.open(path, "w") as tf:
+        for name, kind, linkname in entries:
+            if kind == "file":
+                data = b"x"
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                tf.addfile(info, io.BytesIO(data))
+            elif kind == "sym":
+                info = tarfile.TarInfo(name)
+                info.type = tarfile.SYMTYPE
+                info.linkname = linkname
+                tf.addfile(info)
+            elif kind == "lnk":
+                info = tarfile.TarInfo(name)
+                info.type = tarfile.LNKTYPE
+                info.linkname = linkname
+                tf.addfile(info)
+
+
+def test_unsafe_members_clean_tar(tmp_path):
+    arc = tmp_path / "ok.tar"
+    _write_tar(arc, [("a/b.txt", "file", ""), ("a/c.txt", "file", "")])
+    assert archive_mod.archive_unsafe_members(str(arc), str(tmp_path / "dst")) == []
+
+
+def test_unsafe_members_dotdot_tar(tmp_path):
+    arc = tmp_path / "bad.tar"
+    _write_tar(arc, [("../escape.txt", "file", "")])
+    bad = archive_mod.archive_unsafe_members(str(arc), str(tmp_path / "dst"))
+    assert bad == ["../escape.txt"]
+
+
+def test_unsafe_members_absolute_tar(tmp_path):
+    arc = tmp_path / "abs.tar"
+    # tarfile stores the name as-is; an absolute name is unsafe.
+    _write_tar(arc, [("/etc/passwd", "file", "")])
+    bad = archive_mod.archive_unsafe_members(str(arc), str(tmp_path / "dst"))
+    assert bad == ["/etc/passwd"]
+
+
+def test_unsafe_members_symlink_escape_tar(tmp_path):
+    arc = tmp_path / "sym.tar"
+    # link sits at dst/link, target ../../outside escapes dst.
+    _write_tar(arc, [("link", "sym", "../../outside")])
+    bad = archive_mod.archive_unsafe_members(str(arc), str(tmp_path / "dst"))
+    assert bad == ["link -> ../../outside"]
+
+
+def test_unsafe_members_absolute_symlink_tar(tmp_path):
+    arc = tmp_path / "abssym.tar"
+    _write_tar(arc, [("link", "sym", "/etc")])
+    bad = archive_mod.archive_unsafe_members(str(arc), str(tmp_path / "dst"))
+    assert bad == ["link -> /etc"]
+
+
+def test_unsafe_members_hardlink_escape_tar(tmp_path):
+    arc = tmp_path / "lnk.tar"
+    _write_tar(arc, [("hl", "lnk", "../../etc/shadow")])
+    bad = archive_mod.archive_unsafe_members(str(arc), str(tmp_path / "dst"))
+    assert bad == ["hl -> ../../etc/shadow"]
+
+
+def test_unsafe_members_hardlink_resolves_from_root(tmp_path):
+    # POSIX/tar hardlink targets resolve from the extraction ROOT, not the
+    # link member's directory. `sub/hl -> ../outside` therefore escapes
+    # (dest/../outside), even though a symlink with the same target would
+    # stay inside (dest/sub/../outside == dest/outside).
+    arc = tmp_path / "hlroot.tar"
+    _write_tar(arc, [("sub/hl", "lnk", "../outside")])
+    bad = archive_mod.archive_unsafe_members(str(arc), str(tmp_path / "dst"))
+    assert bad == ["sub/hl -> ../outside"]
+
+
+def test_safe_hardlink_within_root(tmp_path):
+    # `hl -> target` resolves to dest/target — inside, so safe.
+    arc = tmp_path / "hlok.tar"
+    _write_tar(arc, [("hl", "lnk", "target")])
+    assert archive_mod.archive_unsafe_members(str(arc), str(tmp_path / "dst")) == []
+
+
+def test_safe_relative_symlink_within_tar(tmp_path):
+    arc = tmp_path / "innersym.tar"
+    # sub/link -> ../target  resolves to dst/target, which stays inside.
+    _write_tar(arc, [("sub/link", "sym", "../target")])
+    assert archive_mod.archive_unsafe_members(str(arc), str(tmp_path / "dst")) == []
+
+
+def test_unsafe_members_clean_zip(tmp_path):
+    arc = tmp_path / "ok.zip"
+    with zipfile.ZipFile(arc, "w") as zf:
+        zf.writestr("a/b.txt", "hi")
+    assert archive_mod.archive_unsafe_members(str(arc), str(tmp_path / "dst")) == []
+
+
+def test_unsafe_members_dotdot_zip(tmp_path):
+    arc = tmp_path / "bad.zip"
+    with zipfile.ZipFile(arc, "w") as zf:
+        zf.writestr("../escape.txt", "hi")
+    bad = archive_mod.archive_unsafe_members(str(arc), str(tmp_path / "dst"))
+    assert bad == ["../escape.txt"]
+
+
+def _write_zip_symlink(path, name, target):
+    """Write a zip with one unix-mode symlink entry (target = content)."""
+    import stat as _stat
+    with zipfile.ZipFile(path, "w") as zf:
+        info = zipfile.ZipInfo(name)
+        info.external_attr = (_stat.S_IFLNK | 0o777) << 16
+        zf.writestr(info, target)
+
+
+def test_unsafe_members_zip_symlink_escape(tmp_path):
+    arc = tmp_path / "sym.zip"
+    _write_zip_symlink(arc, "link", "../../outside")
+    bad = archive_mod.archive_unsafe_members(str(arc), str(tmp_path / "dst"))
+    assert bad == ["link -> ../../outside"]
+
+
+def test_unsafe_members_zip_symlink_absolute(tmp_path):
+    arc = tmp_path / "abssym.zip"
+    _write_zip_symlink(arc, "link", "/etc/passwd")
+    bad = archive_mod.archive_unsafe_members(str(arc), str(tmp_path / "dst"))
+    assert bad == ["link -> /etc/passwd"]
+
+
+def test_safe_zip_symlink_within(tmp_path):
+    arc = tmp_path / "innersym.zip"
+    _write_zip_symlink(arc, "sub/link", "../target")
+    assert archive_mod.archive_unsafe_members(str(arc), str(tmp_path / "dst")) == []
+
+
+def test_unsafe_members_zip_oversize_symlink(tmp_path):
+    # A member marked as a symlink but carrying a huge payload is refused
+    # without reading it (DoS guard).
+    arc = tmp_path / "big.zip"
+    _write_zip_symlink(arc, "link", "x" * (archive_mod._MAX_SYMLINK_BYTES + 1))
+    bad = archive_mod.archive_unsafe_members(str(arc), str(tmp_path / "dst"))
+    assert bad == ["link -> <oversize link>"]
+
+
+def test_unsafe_members_backslash_zip(tmp_path):
+    arc = tmp_path / "bs.zip"
+    with zipfile.ZipFile(arc, "w") as zf:
+        zf.writestr("..\\..\\escape.txt", "hi")
+    bad = archive_mod.archive_unsafe_members(str(arc), str(tmp_path / "dst"))
+    assert bad == ["..\\..\\escape.txt"]
+
+
+def test_unsafe_members_unreadable_fails_closed(tmp_path):
+    arc = tmp_path / "broken.tar.gz"
+    arc.write_bytes(b"not a real gzip tar")
+    bad = archive_mod.archive_unsafe_members(str(arc), str(tmp_path / "dst"))
+    assert bad == ["<unreadable archive>"]
+
+
+def test_unsafe_members_7z_not_validated(tmp_path):
+    # No stdlib reader for 7z: we don't validate, so return empty even though
+    # the file is bogus (extractor remains responsible).
+    arc = tmp_path / "x.7z"
+    arc.write_bytes(b"garbage")
+    assert archive_mod.archive_unsafe_members(str(arc), str(tmp_path / "dst")) == []
+
+
+def test_unsafe_members_tar_zst_not_validated(tmp_path):
+    # tarfile cannot decompress zstd before Python 3.14; we must NOT
+    # fail-closed on a valid archive the external tar handles fine. Even a
+    # malicious-looking name inside is left to the extractor here.
+    import subprocess
+
+    src = tmp_path / "a.txt"
+    src.write_text("hi")
+    arc = tmp_path / "x.tar.zst"
+    rc = subprocess.run(
+        ["tar", "--zstd", "-cf", str(arc), "-C", str(tmp_path), "a.txt"]
+    ).returncode
+    if rc != 0 or not arc.exists():
+        pytest.skip("tar --zstd unavailable")
+    assert archive_mod.archive_unsafe_members(str(arc), str(tmp_path / "dst")) == []
+
+
+def test_unsafe_members_clean_targz_introspected(tmp_path):
+    arc = tmp_path / "ok.tar.gz"
+    with tarfile.open(arc, "w:gz") as tf:
+        info = tarfile.TarInfo("a/b.txt")
+        data = b"x"
+        info.size = len(data)
+        tf.addfile(info, io.BytesIO(data))
+    assert archive_mod.archive_unsafe_members(str(arc), str(tmp_path / "dst")) == []
+
+
+def test_unsafe_members_dotdot_targz(tmp_path):
+    arc = tmp_path / "bad.tar.gz"
+    with tarfile.open(arc, "w:gz") as tf:
+        info = tarfile.TarInfo("../escape.txt")
+        data = b"x"
+        info.size = len(data)
+        tf.addfile(info, io.BytesIO(data))
+    bad = archive_mod.archive_unsafe_members(str(arc), str(tmp_path / "dst"))
+    assert bad == ["../escape.txt"]
+
+
+def test_unsafe_members_unknown_format(tmp_path):
+    f = tmp_path / "plain.txt"
+    f.write_text("hi")
+    assert archive_mod.archive_unsafe_members(str(f), str(tmp_path / "dst")) == []
+
+
+def test_extract_into_aborts_on_unsafe(tmp_path):
+    arc = tmp_path / "evil.tar"
+    _write_tar(arc, [("../escape.txt", "file", "")])
+    plugin = archive_mod.ArchivePlugin()
+    with patch.object(plugin, "_run") as run, \
+            patch.object(archive_mod.ArchivePlugin, "_warn") as warn:
+        plugin._extract_into(str(arc), str(tmp_path / "dst"))
+    run.assert_not_called()
+    warn.assert_called_once()
+
+
+def test_extract_into_runs_on_safe(tmp_path):
+    arc = tmp_path / "good.tar"
+    _write_tar(arc, [("a/b.txt", "file", "")])
+    plugin = archive_mod.ArchivePlugin()
+    with patch.object(plugin, "_run") as run:
+        plugin._extract_into(str(arc), str(tmp_path / "dst"))
+    run.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
