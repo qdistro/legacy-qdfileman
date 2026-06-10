@@ -210,6 +210,50 @@ def test_pane_rename_rejects_path_separator(pane, tmp_dir):
     warning.assert_called_once()
 
 
+def test_pane_rename_prompts_before_overwrite_and_aborts_on_no(pane, tmp_dir):
+    """Renaming onto an existing sibling must confirm; 'No' leaves both."""
+    src = tmp_dir / "old.txt"
+    src.write_text("source")
+    victim = tmp_dir / "taken.txt"
+    victim.write_text("victim")
+    pane._update_path(str(tmp_dir))
+    for i in range(pane.file_list.count()):
+        if pane.file_list.item(i).text() == "old.txt":
+            pane.file_list.setCurrentRow(i)
+            break
+    with patch(
+        "qfileman.pane.QInputDialog.getText", return_value=("taken.txt", True)
+    ), patch(
+        "qfileman.pane.QMessageBox.question",
+        return_value=QMessageBox.StandardButton.No,
+    ) as question:
+        pane._rename()
+    question.assert_called_once()
+    assert src.read_text() == "source"
+    assert victim.read_text() == "victim"
+
+
+def test_pane_rename_overwrite_on_yes(pane, tmp_dir):
+    src = tmp_dir / "old.txt"
+    src.write_text("source")
+    victim = tmp_dir / "taken.txt"
+    victim.write_text("victim")
+    pane._update_path(str(tmp_dir))
+    for i in range(pane.file_list.count()):
+        if pane.file_list.item(i).text() == "old.txt":
+            pane.file_list.setCurrentRow(i)
+            break
+    with patch(
+        "qfileman.pane.QInputDialog.getText", return_value=("taken.txt", True)
+    ), patch(
+        "qfileman.pane.QMessageBox.question",
+        return_value=QMessageBox.StandardButton.Yes,
+    ):
+        pane._rename()
+    assert not src.exists()
+    assert (tmp_dir / "taken.txt").read_text() == "source"
+
+
 def test_pane_new_folder_creates_directory(pane, tmp_dir):
     pane._update_path(str(tmp_dir))
     with patch(

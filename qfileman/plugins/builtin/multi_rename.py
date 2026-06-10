@@ -87,6 +87,139 @@ def plan_renames(directory: str, names: list[str], template: str, *,
     return out
 
 
+def _apply_rename_plan(plan: list[tuple[str, str]]) -> list[str]:
+    """Execute a rename plan safely; return a list of human-readable failures.
+
+    Renames are staged through a private temp directory first, then moved to
+    their final names. This makes in-set collisions (``a->b, b->c`` chains and
+    ``a<->b`` swaps) non-destructive: a naive in-order ``os.rename`` would
+    clobber the original ``b`` before its own rename ran. Out-of-set
+    overwrites are the caller's decision (it has already prompted); here we
+    just carry them out. Hardened against three data-loss traps:
+
+    * **duplicate finals** — two sources mapping to the same new name would
+      have the second silently destroy the first; such entries are rejected
+      up front and reported, never executed.
+    * **temp-name collisions** — staging uses ``tempfile.mkdtemp`` inside the
+      target directory, so reserved temp names can never clobber a real file
+      that happens to look like our scratch name.
+    * **partial staging** — if any phase-1 move fails, every already-staged
+      file is rolled back to its original and the whole batch aborts, so
+      phase 2 can never ``os.replace`` over an unstaged source.
+    """
+    failures: list[str] = []
+    effective = [(old, new) for old, new in plan if old != new]
+    if not effective:
+        return failures
+
+    # Reject duplicate destination names within the plan (a->x, b->x): we
+    # cannot land both, and silently keeping one is the data loss we're here
+    # to prevent. Drop every member of a colliding group with a clear error.
+    # Canonicalize the collision key (case-fold + Unicode NFC) so that
+    # spellings which denote the *same* entry on a case-insensitive or
+    # name-normalizing filesystem (a->X, b->x) are also treated as colliding —
+    # erring toward rejecting rather than risking a silent clobber.
+    import unicodedata
+    from collections import Counter
+
+    def _key(p):
+        return os.path.normcase(unicodedata.normalize("NFC", os.path.abspath(p)))
+
+    counts = Counter(_key(new) for _o, new in effective)
+    runnable = []
+    for old, new in effective:
+        if counts[_key(new)] > 1:
+            failures.append(
+                f"{os.path.basename(old)}: target "
+                f"{os.path.basename(new)!r} claimed by multiple files")
+        else:
+            runnable.append((old, new))
+    if not runnable:
+        return failures
+
+    # A runnable entry whose *final* lands on the original path of a file that
+    # is NOT being staged away (e.g. the source of a rejected duplicate, like
+    # `c -> a` when `a` was rejected) would have phase 2 silently overwrite
+    # that surviving file. Reject such entries too. Removing one makes its own
+    # source survive, which can expose another — so iterate to a fixpoint.
+    survivors = {_key(old) for old, _new in effective} - {
+        _key(old) for old, _new in runnable
+    }
+    changed = True
+    while changed:
+        changed = False
+        kept = []
+        for old, new in runnable:
+            if _key(new) in survivors:
+                failures.append(
+                    f"{os.path.basename(old)}: target "
+                    f"{os.path.basename(new)!r} would overwrite a file kept by "
+                    f"this batch")
+                survivors.add(_key(old))  # this source now survives too
+                changed = True
+            else:
+                kept.append((old, new))
+        runnable = kept
+    if not runnable:
+        return failures
+
+    # All sources live in the same directory (plan_renames guarantees it), so
+    # one scratch dir on the same filesystem keeps every move atomic.
+    import tempfile
+    directory = os.path.dirname(runnable[0][1])
+    try:
+        scratch = tempfile.mkdtemp(prefix=".qfm-rename-", dir=directory)
+    except OSError as e:
+        return failures + [f"batch rename: cannot stage: {e}"]
+
+    staged: list[tuple[str, str]] = []  # (temp_path, final_path)
+    aborted = False
+    try:
+        # Phase 1: move every source into the scratch dir. On the first
+        # failure, roll back and abort so no source is left unstaged in a way
+        # phase 2 could clobber.
+        for i, (old, new) in enumerate(runnable):
+            tmp = os.path.join(scratch, str(i))
+            try:
+                os.rename(old, tmp)
+            except OSError as e:
+                failures.append(f"{os.path.basename(old)}: {e}")
+                # Roll back everything staged so far to its original name.
+                for done_tmp, _final, orig in staged:
+                    try:
+                        os.rename(done_tmp, orig)
+                    except OSError as re:
+                        failures.append(
+                            f"{os.path.basename(orig)}: rollback failed: {re}")
+                staged.clear()
+                aborted = True
+                break
+            staged.append((tmp, new, old))
+
+        # Phase 2: move each staged temp to its final name. os.replace is
+        # intentional — any same-name bystander was confirmed for overwrite by
+        # the caller, and in-set finals are free because their originals were
+        # staged away in phase 1.
+        if not aborted:
+            for tmp, new, _old in staged:
+                try:
+                    os.replace(tmp, new)
+                except OSError as e:
+                    failures.append(f"{os.path.basename(new)}: {e}")
+                    # Leave the temp in scratch so nothing is lost; it will be
+                    # surfaced by the non-empty-scratch cleanup below.
+    finally:
+        # Remove the scratch dir if empty; otherwise leave it (data still
+        # inside) and report so the user can recover.
+        try:
+            os.rmdir(scratch)
+        except OSError:
+            if os.path.isdir(scratch) and os.listdir(scratch):
+                failures.append(
+                    f"batch rename: recoverable files left in {scratch}")
+    return failures
+
+
 class MultiRenamePlugin(MenuProvider):
     name = "multi_rename"
     description = "Batch rename files in the current directory"
@@ -174,12 +307,31 @@ class MultiRenamePlugin(MenuProvider):
             search=search_edit.text(), replace=replace_edit.text(),
             regex=regex_check.isChecked(),
         )
-        failures: list[str] = []
-        for old, new in plan:
-            try:
-                os.rename(old, new)
-            except OSError as e:
-                failures.append(f"{os.path.basename(old)}: {e}")
+
+        # Guard against silent data loss. Two failure modes:
+        #  * a new name collides with a file NOT being renamed away (an
+        #    out-of-set bystander) — refuse unless the user confirms;
+        #  * a new name collides with another file that *is* in the plan
+        #    (e.g. a->b, b->c, or a swap) — a naive in-order os.rename would
+        #    destroy the original on POSIX, so stage through temp names.
+        sources = {old for old, _ in plan}
+        bystanders = sorted(
+            os.path.basename(new) for old, new in plan
+            if os.path.lexists(new) and new not in sources
+        )
+        if bystanders:
+            reply = QMessageBox.question(
+                None, "Batch Rename",
+                "These existing files would be overwritten:\n"
+                + "\n".join(bystanders)
+                + "\n\nOverwrite them?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+        failures = _apply_rename_plan(plan)
         if failures:
             QMessageBox.warning(
                 None, "Batch Rename",

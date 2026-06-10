@@ -28,7 +28,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from qfileman.file_model import FileModel, is_safe_rename_name
+from qfileman.file_model import (
+    FileModel,
+    is_safe_rename_name,
+    rename_exclusive as _rename_exclusive,
+)
 
 
 log = logging.getLogger(__name__)
@@ -314,11 +318,31 @@ class FilePane(QWidget):
             )
             return
         new_path = os.path.join(os.path.dirname(old_path), new_name)
+        # POSIX rename silently replaces an existing destination. Attempt an
+        # atomic no-clobber rename first; only if it reports the name is taken
+        # do we prompt, then retry with overwrite=True on confirmation. Doing
+        # the check inside the rename syscall (rather than a separate stat)
+        # closes the TOCTOU window a plain os.rename would leave open.
         try:
-            os.rename(old_path, new_path)
-            self._refresh()
+            _rename_exclusive(old_path, new_path)
+        except FileExistsError:
+            reply = QMessageBox.question(
+                self, "Overwrite?",
+                f"'{new_name}' already exists. Overwrite it?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+            try:
+                _rename_exclusive(old_path, new_path, overwrite=True)
+            except OSError as e:
+                QMessageBox.warning(self, "Error", f"Could not rename: {e}")
+                return
         except OSError as e:
             QMessageBox.warning(self, "Error", f"Could not rename: {e}")
+            return
+        self._refresh()
 
     def _delete(self) -> None:
         item = self.file_list.currentItem()

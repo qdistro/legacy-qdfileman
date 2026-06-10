@@ -616,7 +616,26 @@ class FileManagerWindow(QMainWindow):
             return
         dest = dest.strip()
 
-        if shutil.which("rsync"):
+        # rsync, shutil.move and shutil.copy2 all silently overwrite an
+        # existing destination. The rsync branch and the shutil fallback have
+        # *different* placement semantics for a directory source (rsync gets a
+        # trailing slash and merges contents straight into dest; shutil drops
+        # the whole tree at dest/basename), so resolve the real conflict against
+        # the branch we're about to take and confirm before clobbering.
+        from qfileman.file_model import copy_move_conflict
+        use_rsync = bool(shutil.which("rsync"))
+        conflict = copy_move_conflict(path, dest, rsync=use_rsync)
+        if conflict is not None:
+            reply = QMessageBox.question(
+                self, f"{title} — Overwrite?",
+                f"'{conflict}' already exists at the destination. Overwrite it?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+        if use_rsync:
             from qfileman.plugins.builtin.rsync_sync import rsync_argv
             from qfileman.plugins.builtin._runner import run_command_dialog
             # rsync needs a trailing slash on a source directory to

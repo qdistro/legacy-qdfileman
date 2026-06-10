@@ -829,3 +829,126 @@ def test_history_truncation(window, tmp_path):
     window._go_forward()
     # Should stay at dir1 since forward history was truncated
     assert window.current_path == str(dir1)
+
+
+# --- copy/move destination clobber guards ------------------------------------
+
+
+def _select(window, name):
+    window._update_path(window.current_path)
+    for i in range(window.file_list.count()):
+        if window.file_list.item(i).text() == name:
+            window.file_list.setCurrentRow(i)
+            return
+    raise AssertionError(f"{name!r} not in list")
+
+
+def test_copy_fallback_prompts_and_aborts_on_no(window, tmp_dir):
+    """No rsync: copy onto an existing file must confirm; 'No' preserves it."""
+    src = tmp_dir / "src.txt"
+    src.write_text("source")
+    victim = tmp_dir / "dst.txt"
+    victim.write_text("victim")
+    window._update_path(str(tmp_dir))
+    _select(window, "src.txt")
+    with patch("shutil.which", return_value=None), \
+            patch("PyQt6.QtWidgets.QInputDialog.getText",
+                  return_value=(str(victim), True)), \
+            patch("qfileman.pane.QMessageBox.question",
+                  return_value=QMessageBox.StandardButton.No) as q:
+        window._copy_or_move(move=False)
+    q.assert_called_once()
+    assert victim.read_text() == "victim"
+    assert src.read_text() == "source"
+
+
+def test_copy_fallback_overwrites_on_yes(window, tmp_dir):
+    src = tmp_dir / "src.txt"
+    src.write_text("source")
+    victim = tmp_dir / "dst.txt"
+    victim.write_text("victim")
+    window._update_path(str(tmp_dir))
+    _select(window, "src.txt")
+    with patch("shutil.which", return_value=None), \
+            patch("PyQt6.QtWidgets.QInputDialog.getText",
+                  return_value=(str(victim), True)), \
+            patch("qfileman.pane.QMessageBox.question",
+                  return_value=QMessageBox.StandardButton.Yes):
+        window._copy_or_move(move=False)
+    assert victim.read_text() == "source"
+
+
+def test_move_fallback_prompts_and_aborts_on_no(window, tmp_dir):
+    src = tmp_dir / "src.txt"
+    src.write_text("source")
+    victim = tmp_dir / "dst.txt"
+    victim.write_text("victim")
+    window._update_path(str(tmp_dir))
+    _select(window, "src.txt")
+    with patch("shutil.which", return_value=None), \
+            patch("PyQt6.QtWidgets.QInputDialog.getText",
+                  return_value=(str(victim), True)), \
+            patch("qfileman.pane.QMessageBox.question",
+                  return_value=QMessageBox.StandardButton.No):
+        window._copy_or_move(move=True)
+    assert src.read_text() == "source"
+    assert victim.read_text() == "victim"
+
+
+def test_copy_to_new_dest_does_not_prompt(window, tmp_dir):
+    """No existing destination → no overwrite prompt, copy proceeds."""
+    src = tmp_dir / "src.txt"
+    src.write_text("source")
+    dest = tmp_dir / "fresh.txt"
+    window._update_path(str(tmp_dir))
+    _select(window, "src.txt")
+    with patch("shutil.which", return_value=None), \
+            patch("PyQt6.QtWidgets.QInputDialog.getText",
+                  return_value=(str(dest), True)), \
+            patch("qfileman.pane.QMessageBox.question") as q:
+        window._copy_or_move(move=False)
+    q.assert_not_called()
+    assert dest.read_text() == "source"
+
+
+def test_copy_rsync_path_blocked_by_decline(window, tmp_dir):
+    """With rsync available, declining the overwrite prompt must not invoke
+    the rsync runner at all."""
+    src = tmp_dir / "src.txt"
+    src.write_text("source")
+    victim = tmp_dir / "dst.txt"
+    victim.write_text("victim")
+    window._update_path(str(tmp_dir))
+    _select(window, "src.txt")
+    with patch("shutil.which", return_value="/usr/bin/rsync"), \
+            patch("PyQt6.QtWidgets.QInputDialog.getText",
+                  return_value=(str(victim), True)), \
+            patch("qfileman.pane.QMessageBox.question",
+                  return_value=QMessageBox.StandardButton.No), \
+            patch("qfileman.plugins.builtin._runner.run_command_dialog") as run:
+        window._copy_or_move(move=False)
+    run.assert_not_called()
+    assert victim.read_text() == "victim"
+
+
+def test_copy_rsync_dir_child_collision_prompts(window, tmp_dir):
+    """rsync copy of a directory whose child collides with an existing entry
+    in the destination must prompt, even though dest/srcdir doesn't exist."""
+    srcdir = tmp_dir / "srcdir"
+    srcdir.mkdir()
+    (srcdir / "shared.txt").write_text("new")
+    dest = tmp_dir / "dest"
+    dest.mkdir()
+    (dest / "shared.txt").write_text("victim")
+    window._update_path(str(tmp_dir))
+    _select(window, "srcdir")
+    with patch("shutil.which", return_value="/usr/bin/rsync"), \
+            patch("PyQt6.QtWidgets.QInputDialog.getText",
+                  return_value=(str(dest), True)), \
+            patch("qfileman.pane.QMessageBox.question",
+                  return_value=QMessageBox.StandardButton.No) as q, \
+            patch("qfileman.plugins.builtin._runner.run_command_dialog") as run:
+        window._copy_or_move(move=False)
+    q.assert_called_once()
+    run.assert_not_called()
+    assert (dest / "shared.txt").read_text() == "victim"

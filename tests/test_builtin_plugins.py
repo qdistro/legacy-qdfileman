@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+from unittest.mock import patch
 
 import pytest
 
@@ -323,3 +324,129 @@ def test_plan_renames_real_filesystem(tmp_path):
     )
     new_basenames = sorted(os.path.basename(new) for _old, new in plan)
     assert new_basenames == ["one.txt", "two.txt"]
+
+
+# multi_rename: collision-safe plan application -------------------------------
+
+
+def test_apply_rename_plan_swap_is_nondestructive(tmp_path):
+    """a<->b swap must not destroy either file (naive os.rename would)."""
+    a = tmp_path / "a.txt"
+    b = tmp_path / "b.txt"
+    a.write_text("AAA")
+    b.write_text("BBB")
+    plan = [(str(a), str(b)), (str(b), str(a))]
+    failures = mr_mod._apply_rename_plan(plan)
+    assert failures == []
+    assert (tmp_path / "a.txt").read_text() == "BBB"
+    assert (tmp_path / "b.txt").read_text() == "AAA"
+
+
+def test_apply_rename_plan_chain_is_nondestructive(tmp_path):
+    """a->b, b->c chain preserves all content."""
+    a = tmp_path / "a.txt"
+    b = tmp_path / "b.txt"
+    a.write_text("AAA")
+    b.write_text("BBB")
+    plan = [(str(a), str(b)), (str(b), str(tmp_path / "c.txt"))]
+    failures = mr_mod._apply_rename_plan(plan)
+    assert failures == []
+    assert (tmp_path / "b.txt").read_text() == "AAA"
+    assert (tmp_path / "c.txt").read_text() == "BBB"
+    assert not (tmp_path / "a.txt").exists()
+
+
+def test_apply_rename_plan_leaves_no_temp_files(tmp_path):
+    a = tmp_path / "a.txt"
+    a.write_text("x")
+    plan = [(str(a), str(tmp_path / "renamed.txt"))]
+    assert mr_mod._apply_rename_plan(plan) == []
+    leftovers = [p for p in os.listdir(tmp_path) if ".qfm-rename-" in p]
+    assert leftovers == []
+    assert (tmp_path / "renamed.txt").read_text() == "x"
+
+
+def test_apply_rename_plan_duplicate_finals_rejected(tmp_path):
+    """Two sources mapping to the same name must not silently drop one."""
+    a = tmp_path / "a.txt"; a.write_text("AAA")
+    b = tmp_path / "b.txt"; b.write_text("BBB")
+    x = str(tmp_path / "x.txt")
+    failures = mr_mod._apply_rename_plan([(str(a), x), (str(b), x)])
+    # Both colliding entries are reported; neither original is destroyed.
+    assert len(failures) == 2
+    assert a.read_text() == "AAA"
+    assert b.read_text() == "BBB"
+    assert not (tmp_path / "x.txt").exists()
+
+
+def test_apply_rename_plan_temp_lookalike_bystander_preserved(tmp_path):
+    """A real file living in the target dir must never be eaten as scratch."""
+    a = tmp_path / "a.txt"; a.write_text("AAA")
+    # A file that resembles an old-style temp name.
+    bystander = tmp_path / "x.txt.qfm-rename-1-0.tmp"
+    bystander.write_text("KEEP")
+    failures = mr_mod._apply_rename_plan([(str(a), str(tmp_path / "x.txt"))])
+    assert failures == []
+    assert bystander.read_text() == "KEEP"
+    assert (tmp_path / "x.txt").read_text() == "AAA"
+
+
+def test_apply_rename_plan_rolls_back_on_staging_failure(tmp_path):
+    """If staging one source fails, already-staged sources are restored and
+    no surviving original is clobbered by phase 2."""
+    a = tmp_path / "a.txt"; a.write_text("AAA")
+    b = tmp_path / "b.txt"; b.write_text("BBB")
+    # Plan: a->b (would need b staged away first), b->c. Force b's staging to
+    # fail; a must be rolled back and original b must survive intact.
+    plan = [(str(a), str(b)), (str(b), str(tmp_path / "c.txt"))]
+
+    real_rename = os.rename
+    calls = {"n": 0}
+
+    def flaky_rename(src, dst):
+        # Fail the second staging move (b -> scratch); allow rollback moves.
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError("simulated staging failure")
+        return real_rename(src, dst)
+
+    with patch("qfileman.plugins.builtin.multi_rename.os.rename",
+               side_effect=flaky_rename):
+        failures = mr_mod._apply_rename_plan(plan)
+
+    assert failures  # the failure was reported
+    # Critically: original b is NOT destroyed, and a is back in place.
+    assert a.read_text() == "AAA"
+    assert b.read_text() == "BBB"
+    assert not (tmp_path / "c.txt").exists()
+
+
+def test_apply_rename_plan_case_insensitive_duplicate_rejected(tmp_path):
+    """On a case-insensitive fs, a->X and b->x denote one entry; both must be
+    rejected rather than letting the second os.replace eat the first."""
+    a = tmp_path / "a.txt"; a.write_text("AAA")
+    b = tmp_path / "b.txt"; b.write_text("BBB")
+    plan = [(str(a), str(tmp_path / "X.txt")), (str(b), str(tmp_path / "x.txt"))]
+    # Simulate case-insensitive normcase (POSIX normcase is a no-op).
+    with patch("qfileman.plugins.builtin.multi_rename.os.path.normcase",
+               side_effect=lambda p: p.lower()):
+        failures = mr_mod._apply_rename_plan(plan)
+    assert len(failures) == 2
+    assert a.read_text() == "AAA"
+    assert b.read_text() == "BBB"
+
+
+def test_apply_rename_plan_runnable_must_not_eat_rejected_source(tmp_path):
+    """A runnable entry whose target is the surviving source of a rejected
+    duplicate (c->a when a->x,b->x were rejected) must NOT clobber it."""
+    a = tmp_path / "a.txt"; a.write_text("AAA")
+    b = tmp_path / "b.txt"; b.write_text("BBB")
+    c = tmp_path / "c.txt"; c.write_text("CCC")
+    x = str(tmp_path / "x.txt")
+    plan = [(str(a), x), (str(b), x), (str(c), str(a))]
+    failures = mr_mod._apply_rename_plan(plan)
+    assert len(failures) == 3
+    assert a.read_text() == "AAA"   # not silently overwritten by c
+    assert b.read_text() == "BBB"
+    assert c.read_text() == "CCC"
+    assert not (tmp_path / "x.txt").exists()

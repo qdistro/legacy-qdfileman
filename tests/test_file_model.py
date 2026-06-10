@@ -422,3 +422,252 @@ def test_file_model_unreadable_directory_logs_warning(tmp_path, caplog):
             )
     finally:
         locked.chmod(0o700)
+
+
+# --- destination clobber guards (rename/copy/move) ---------------------------
+
+
+def test_file_model_rename_refuses_existing_sibling(tmp_dir):
+    """rename must not silently destroy an existing destination file."""
+    src = tmp_dir / "a.txt"
+    src.write_text("source")
+    victim = tmp_dir / "b.txt"
+    victim.write_text("victim")
+
+    model = FileModel(str(tmp_dir))
+    assert model.rename(str(src), "b.txt") is False
+    # Both files survive untouched.
+    assert src.read_text() == "source"
+    assert victim.read_text() == "victim"
+
+
+def test_file_model_rename_overwrite_opt_in(tmp_dir):
+    """rename(overwrite=True) replaces the destination."""
+    src = tmp_dir / "a.txt"
+    src.write_text("source")
+    victim = tmp_dir / "b.txt"
+    victim.write_text("victim")
+
+    model = FileModel(str(tmp_dir))
+    assert model.rename(str(src), "b.txt", overwrite=True) is True
+    assert not src.exists()
+    assert (tmp_dir / "b.txt").read_text() == "source"
+
+
+def test_file_model_rename_case_only_self_is_allowed(tmp_dir):
+    """Renaming a file to a name that resolves to itself isn't a clobber."""
+    src = tmp_dir / "keep.txt"
+    src.write_text("data")
+    model = FileModel(str(tmp_dir))
+    # Renaming to the identical name is a no-op that must succeed (samefile).
+    assert model.rename(str(src), "keep.txt") is True
+    assert src.read_text() == "data"
+
+
+def test_file_model_copy_refuses_existing_file(tmp_dir):
+    src = tmp_dir / "a.txt"
+    src.write_text("source")
+    victim = tmp_dir / "dst.txt"
+    victim.write_text("victim")
+
+    model = FileModel(str(tmp_dir))
+    assert model.copy(str(src), str(victim)) is False
+    assert victim.read_text() == "victim"
+
+
+def test_file_model_copy_into_existing_dir_refuses_same_name(tmp_dir):
+    """Copying into a directory that already holds the same basename clobbers
+    dst/basename, not the directory — guard the real target."""
+    src = tmp_dir / "a.txt"
+    src.write_text("source")
+    dst_dir = tmp_dir / "into"
+    dst_dir.mkdir()
+    (dst_dir / "a.txt").write_text("victim")
+
+    model = FileModel(str(tmp_dir))
+    assert model.copy(str(src), str(dst_dir)) is False
+    assert (dst_dir / "a.txt").read_text() == "victim"
+
+
+def test_file_model_copy_into_dir_new_name_succeeds(tmp_dir):
+    src = tmp_dir / "a.txt"
+    src.write_text("source")
+    dst_dir = tmp_dir / "into"
+    dst_dir.mkdir()
+
+    model = FileModel(str(tmp_dir))
+    assert model.copy(str(src), str(dst_dir)) is True
+    assert (dst_dir / "a.txt").read_text() == "source"
+
+
+def test_file_model_copy_overwrite_opt_in(tmp_dir):
+    src = tmp_dir / "a.txt"
+    src.write_text("source")
+    victim = tmp_dir / "dst.txt"
+    victim.write_text("victim")
+
+    model = FileModel(str(tmp_dir))
+    assert model.copy(str(src), str(victim), overwrite=True) is True
+    assert victim.read_text() == "source"
+
+
+def test_file_model_move_refuses_existing_file(tmp_dir):
+    src = tmp_dir / "a.txt"
+    src.write_text("source")
+    victim = tmp_dir / "dst.txt"
+    victim.write_text("victim")
+
+    model = FileModel(str(tmp_dir))
+    assert model.move(str(src), str(victim)) is False
+    assert src.read_text() == "source"
+    assert victim.read_text() == "victim"
+
+
+def test_file_model_move_overwrite_opt_in(tmp_dir):
+    src = tmp_dir / "a.txt"
+    src.write_text("source")
+    victim = tmp_dir / "dst.txt"
+    victim.write_text("victim")
+
+    model = FileModel(str(tmp_dir))
+    assert model.move(str(src), str(victim), overwrite=True) is True
+    assert not src.exists()
+    assert victim.read_text() == "source"
+
+
+def test_file_model_copy_dir_overwrite_merges(tmp_dir):
+    """copytree must accept an existing dir only on explicit overwrite."""
+    src = tmp_dir / "srcdir"
+    src.mkdir()
+    (src / "f.txt").write_text("new")
+    dst = tmp_dir / "dstdir"
+    dst.mkdir()
+    (dst / "old.txt").write_text("kept")
+
+    model = FileModel(str(tmp_dir))
+    # Without overwrite the existing dir is protected.
+    assert model.copy(str(src), str(dst)) is False
+    # With overwrite, contents merge in.
+    assert model.copy(str(src), str(dst), overwrite=True) is True
+    assert (dst / "f.txt").read_text() == "new"
+    assert (dst / "old.txt").read_text() == "kept"
+
+
+def test_would_clobber_helpers(tmp_dir):
+    from qfileman.file_model import would_clobber, effective_copy_target
+
+    a = tmp_dir / "a.txt"
+    a.write_text("x")
+    b = tmp_dir / "b.txt"
+    assert would_clobber(str(a), str(b)) is False  # b missing
+    b.write_text("y")
+    assert would_clobber(str(a), str(b)) is True
+    # same file is not a clobber
+    assert would_clobber(str(a), str(a)) is False
+    # effective target resolves into-directory drops
+    d = tmp_dir / "dir"
+    d.mkdir()
+    assert effective_copy_target(str(a), str(d)) == d / "a.txt"
+    assert effective_copy_target(str(a), str(b)) == b
+
+
+# --- broken-symlink destinations & atomic rename -----------------------------
+
+
+def test_file_model_move_refuses_broken_symlink_dest(tmp_dir):
+    """A dangling symlink occupies its name; move must not silently replace
+    it (Path.exists() is False for a broken link, so the naive check missed)."""
+    src = tmp_dir / "a.txt"
+    src.write_text("source")
+    link = tmp_dir / "dangling"
+    link.symlink_to(tmp_dir / "no_such_target")
+    assert not link.exists() and link.is_symlink()
+
+    model = FileModel(str(tmp_dir))
+    assert model.move(str(src), str(link)) is False
+    assert link.is_symlink()
+    assert src.read_text() == "source"
+
+
+def test_file_model_copy_refuses_broken_symlink_dest(tmp_dir):
+    """copy2 would write *through* a dangling symlink, creating its target;
+    the guard must treat the symlink name as occupied."""
+    src = tmp_dir / "a.txt"
+    src.write_text("source")
+    link = tmp_dir / "dangling"
+    target = tmp_dir / "no_such_target"
+    link.symlink_to(target)
+
+    model = FileModel(str(tmp_dir))
+    assert model.copy(str(src), str(link)) is False
+    assert not target.exists()  # nothing was written through the link
+    assert link.is_symlink()
+
+
+def test_rename_exclusive_does_not_clobber(tmp_dir):
+    from qfileman.file_model import rename_exclusive
+    import pytest as _pytest
+
+    src = tmp_dir / "a.txt"
+    src.write_text("source")
+    victim = tmp_dir / "b.txt"
+    victim.write_text("victim")
+    with _pytest.raises(FileExistsError):
+        rename_exclusive(src, victim)
+    assert victim.read_text() == "victim"
+    assert src.read_text() == "source"
+    # overwrite=True proceeds.
+    rename_exclusive(src, victim, overwrite=True)
+    assert victim.read_text() == "source"
+    assert not src.exists()
+
+
+def test_rename_exclusive_self_is_noop(tmp_dir):
+    from qfileman.file_model import rename_exclusive
+    src = tmp_dir / "a.txt"
+    src.write_text("source")
+    rename_exclusive(src, src)  # must not raise
+    assert src.read_text() == "source"
+
+
+def test_renameat2_fallback_path_still_guards(tmp_dir, monkeypatch):
+    """Force the non-syscall fallback and confirm it still refuses a clobber."""
+    import qfileman.file_model as fm
+    monkeypatch.setattr(fm, "_renameat2_noreplace", lambda old, new: False)
+    src = tmp_dir / "a.txt"
+    src.write_text("source")
+    victim = tmp_dir / "b.txt"
+    victim.write_text("victim")
+    import pytest as _pytest
+    with _pytest.raises(FileExistsError):
+        fm.rename_exclusive(src, victim)
+    assert victim.read_text() == "victim"
+
+
+def test_copy_move_conflict_rsync_dir_detects_child_clash(tmp_dir):
+    """rsync of a dir merges contents into dest; a child collision must be
+    detected even though dest/srcdir itself does not exist."""
+    from qfileman.file_model import copy_move_conflict
+
+    srcdir = tmp_dir / "srcdir"
+    srcdir.mkdir()
+    (srcdir / "shared.txt").write_text("new")
+    dest = tmp_dir / "dest"
+    dest.mkdir()
+    (dest / "shared.txt").write_text("victim")
+
+    # rsync semantics: contents merge into dest -> shared.txt collides.
+    assert copy_move_conflict(str(srcdir), str(dest), rsync=True) == "shared.txt"
+    # shutil semantics: whole tree lands at dest/srcdir (which is absent).
+    assert copy_move_conflict(str(srcdir), str(dest), rsync=False) is None
+
+
+def test_copy_move_conflict_file_into_dir(tmp_dir):
+    from qfileman.file_model import copy_move_conflict
+    src = tmp_dir / "a.txt"
+    src.write_text("x")
+    dest = tmp_dir / "into"
+    dest.mkdir()
+    assert copy_move_conflict(str(src), str(dest)) is None
+    (dest / "a.txt").write_text("victim")
+    assert copy_move_conflict(str(src), str(dest)) == "a.txt"
