@@ -32,7 +32,7 @@ from PyQt6.QtWidgets import (
 )
 
 from qfileman.search import FileSearch
-from qfileman.worker import Cancellation, run_in_thread
+from qfileman.worker import Cancellation
 
 log = logging.getLogger(__name__)
 

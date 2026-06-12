@@ -239,7 +239,6 @@ class MultiRenamePlugin(MenuProvider):
             QLabel,
             QLineEdit,
             QListWidget,
-            QListWidgetItem,
             QMessageBox,
             QVBoxLayout,
         )

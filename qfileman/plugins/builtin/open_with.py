@@ -32,7 +32,6 @@ import re
 import shlex
 import shutil
 import subprocess
-from typing import Iterable
 
 from qfileman.plugin import MenuProvider
 

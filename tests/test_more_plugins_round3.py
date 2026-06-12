@@ -11,7 +11,6 @@ methods are not invoked because they require user interaction.
 from __future__ import annotations
 
 import json
-import os
 import textwrap
 
 import pytest
@@ -411,7 +410,7 @@ def test_rclone_menu_visible_when_binary_present(monkeypatch):
     labels = [lbl for lbl, _cb in
               rc_mod.RclonePlugin().get_menu_items("/tmp/foo")]
     assert "Rclone Copy To…" in labels
-    assert any("Sync" in l for l in labels)
+    assert any("Sync" in label for label in labels)
 
 
 # ---------------------------------------------------------------------------

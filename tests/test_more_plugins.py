@@ -15,7 +15,7 @@ import socket
 import threading
 
 import pytest
-from qfileman.plugin import MenuProvider, NavigationHook, PluginManager
+from qfileman.plugin import PluginManager
 from qfileman.plugins.builtin import _qdshell as qd_mod
 from qfileman.plugins.builtin import _qterminator as qt_mod
 from qfileman.plugins.builtin import _runner as runner_mod

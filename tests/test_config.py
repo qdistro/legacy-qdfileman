@@ -1,6 +1,5 @@
 """Tests for config module."""
 
-import os
 
 import pytest
 from qfileman import config as config_mod

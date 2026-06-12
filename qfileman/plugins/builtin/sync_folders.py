@@ -27,7 +27,6 @@ import logging
 import os
 import shutil
 import subprocess
-from typing import Iterable
 
 from qfileman.plugin import MenuProvider
 

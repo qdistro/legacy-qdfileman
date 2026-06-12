@@ -19,7 +19,7 @@ import os
 import stat
 import tarfile
 import zipfile
-from typing import Sequence
+from collections.abc import Sequence
 
 from qfileman.plugin import MenuProvider
 

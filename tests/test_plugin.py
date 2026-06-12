@@ -1,8 +1,6 @@
 """Tests for the plugin system."""
 
-import os
 
-import pytest
 from qfileman.plugin import (
     FileFilter,
     MenuProvider,

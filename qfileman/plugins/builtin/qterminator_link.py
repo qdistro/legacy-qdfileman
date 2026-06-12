@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
 
 from qfileman.plugin import MenuProvider, NavigationHook
 
@@ -32,7 +31,7 @@ log = logging.getLogger(__name__)
 class _LinkState:
     """Shared between the MenuProvider and the NavigationHook instances."""
 
-    tab_id: Optional[int] = None
+    tab_id: int | None = None
     tab_title: str = ""
 
     @classmethod

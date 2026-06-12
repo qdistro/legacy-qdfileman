@@ -67,7 +67,7 @@ class _Connection:
         self._buf = b""
         self._next_id = 1
 
-    def __enter__(self) -> "_Connection":
+    def __enter__(self) -> _Connection:
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         s.settimeout(self._timeout)
         try:

@@ -3,7 +3,6 @@
 import logging
 import os
 import tomllib
-from pathlib import Path
 
 log = logging.getLogger(__name__)
 

@@ -27,7 +27,7 @@ and qdshell silently keeps it in the notification history.
 from __future__ import annotations
 
 import logging
-from typing import Iterable
+from collections.abc import Iterable
 
 from PyQt6.QtCore import QVariant
 from PyQt6.QtDBus import QDBusConnection, QDBusInterface

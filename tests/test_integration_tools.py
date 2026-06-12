@@ -19,7 +19,6 @@ process directly. That keeps tests fast and reproducible.
 
 from __future__ import annotations
 
-import hashlib
 import os
 import shutil
 import subprocess

@@ -119,7 +119,6 @@ class RclonePlugin(MenuProvider):
                 return
 
         argv = rclone_argv(operation, path, dest)
-        import os
         title = f"rclone {operation} → {dest}"
         from qfileman.plugins.builtin._runner import run_command_dialog
         run_command_dialog(title, argv)

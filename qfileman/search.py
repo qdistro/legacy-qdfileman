@@ -10,8 +10,8 @@ from __future__ import annotations
 import fnmatch
 import logging
 import os
+from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import Callable, Iterator
 
 log = logging.getLogger(__name__)
 

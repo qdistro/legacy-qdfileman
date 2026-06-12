@@ -19,7 +19,7 @@ import logging
 import re
 import shutil
 import time
-from typing import Iterable, Sequence
+from collections.abc import Iterable, Sequence
 
 from PyQt6.QtCore import QProcess
 from PyQt6.QtWidgets import (

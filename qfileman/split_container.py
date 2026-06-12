@@ -10,7 +10,7 @@ the target in a nested splitter.
 from __future__ import annotations
 
 import logging
-from typing import Callable
+from collections.abc import Callable
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QSplitter, QWidget
