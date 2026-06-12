@@ -206,7 +206,7 @@ def test_window_change_sort(window, tmp_path):
     # Verify type sort persists after refresh
     window._refresh()
     first_type_after_refresh = window.file_list.item(0).text()
-    assert first_type_after_refresh.endswith(".aaa"), f"Type sort should persist after refresh"
+    assert first_type_after_refresh.endswith(".aaa"), "Type sort should persist after refresh"
 
 
 def test_window_has_plugins_menu(window):
