@@ -676,7 +676,6 @@ class FileManagerWindow(QMainWindow):
             return
         self._refresh()
         # Drop straight into the editor — that's the Norton/TC reflex.
-        item = None
         try:
             self._active_pane._select_path(target)
         except AttributeError:

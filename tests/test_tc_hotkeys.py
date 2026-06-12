@@ -263,7 +263,7 @@ def test_swap_panes_exchanges_cwds(window, tmp_path):
     window._update_path(str(a))
     QApplication.processEvents()
     # Split to get a second pane, then point it at ``b``.
-    window._split_right_action_callback = None  # noqa: keeps lint quiet
+    window._split_right_action_callback = None
     window._split_right()
     QApplication.processEvents()
     panes = window._split_root.find_panes()
