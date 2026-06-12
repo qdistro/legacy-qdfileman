@@ -1,10 +1,9 @@
 """Tests for CLI module."""
 
 import os
-
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
 from qfileman.__main__ import parse_args, setup_window
 
 

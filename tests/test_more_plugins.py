@@ -15,15 +15,13 @@ import socket
 import threading
 
 import pytest
-
 from qfileman.plugin import MenuProvider, NavigationHook, PluginManager
-from qfileman.plugins.builtin import _qterminator as qt_mod
 from qfileman.plugins.builtin import _qdshell as qd_mod
+from qfileman.plugins.builtin import _qterminator as qt_mod
 from qfileman.plugins.builtin import _runner as runner_mod
 from qfileman.plugins.builtin import diff as diff_mod
 from qfileman.plugins.builtin import fuzzy_search as fz_mod
 from qfileman.plugins.builtin import open_terminal as ot_mod
-
 
 # ---------------------------------------------------------------------------
 # Discovery: the new plugin files load through the manager.

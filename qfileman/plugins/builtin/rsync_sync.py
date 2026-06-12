@@ -23,7 +23,6 @@ import os
 
 from qfileman.plugin import MenuProvider
 
-
 log = logging.getLogger(__name__)
 
 
@@ -120,7 +119,8 @@ class RsyncSyncPlugin(MenuProvider):
 
     def _run(self, title: str, argv: list[str]) -> None:
         from qfileman.plugins.builtin._runner import (
-            missing_tools, run_command_dialog,
+            missing_tools,
+            run_command_dialog,
         )
         missing = missing_tools(["rsync"])
         if missing:

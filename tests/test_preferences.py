@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import pytest
-
-from qfileman import config as config_mod
 from qfileman.config import Config
 from qfileman.preferences import PreferencesDialog
+
+from qfileman import config as config_mod
 
 
 @pytest.fixture

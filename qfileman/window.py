@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 import os
 
-from PyQt6.QtCore import Qt, QDir, pyqtSignal
+from PyQt6.QtCore import QDir, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QFileSystemModel
 from PyQt6.QtWidgets import (
     QApplication,
@@ -44,7 +44,6 @@ from PyQt6.QtWidgets import (
 
 from qfileman.pane import FilePane
 from qfileman.split_container import SplitContainer
-
 
 log = logging.getLogger(__name__)
 
@@ -598,8 +597,9 @@ class FileManagerWindow(QMainWindow):
         the rsync_sync plugin uses. Falls back to ``shutil`` when
         ``rsync`` isn't on PATH (the menu hides itself otherwise but
         the keyboard shortcut would still fire)."""
-        from PyQt6.QtWidgets import QInputDialog, QMessageBox
         import shutil
+
+        from PyQt6.QtWidgets import QInputDialog, QMessageBox
 
         path = self._selected_path()
         if not path:
@@ -636,8 +636,8 @@ class FileManagerWindow(QMainWindow):
                 return
 
         if use_rsync:
-            from qfileman.plugins.builtin.rsync_sync import rsync_argv
             from qfileman.plugins.builtin._runner import run_command_dialog
+            from qfileman.plugins.builtin.rsync_sync import rsync_argv
             # rsync needs a trailing slash on a source directory to
             # mean "the contents of"; without it we'd nest src/ inside
             # dest/src/, which is not the copy semantics F5 implies.

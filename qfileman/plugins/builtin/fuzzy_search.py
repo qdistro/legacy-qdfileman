@@ -28,7 +28,6 @@ from typing import Iterable
 
 from qfileman.plugin import MenuProvider
 
-
 log = logging.getLogger(__name__)
 
 
@@ -130,8 +129,14 @@ class FuzzySearchPlugin(MenuProvider):
 
     def _open_dialog(self, path: str) -> None:
         from PyQt6.QtWidgets import (
-            QApplication, QDialog, QDialogButtonBox, QLabel, QLineEdit,
-            QListWidget, QListWidgetItem, QVBoxLayout,
+            QApplication,
+            QDialog,
+            QDialogButtonBox,
+            QLabel,
+            QLineEdit,
+            QListWidget,
+            QListWidgetItem,
+            QVBoxLayout,
         )
 
         root = path if os.path.isdir(path) else os.path.dirname(path) or "."

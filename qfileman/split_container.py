@@ -17,7 +17,6 @@ from PyQt6.QtWidgets import QSplitter, QWidget
 
 from qfileman.pane import FilePane
 
-
 log = logging.getLogger(__name__)
 
 

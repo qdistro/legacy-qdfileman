@@ -8,11 +8,10 @@ import sys
 from PyQt6.QtWidgets import QApplication
 
 from qfileman import __version__
-from qfileman.window import FileManagerWindow
 from qfileman.config import Config
 from qfileman.plugin import PluginManager
 from qfileman.theme import apply_theme
-
+from qfileman.window import FileManagerWindow
 
 log = logging.getLogger(__name__)
 

@@ -7,9 +7,8 @@ import logging
 import os
 import shutil
 import sys
-from pathlib import Path
 from datetime import datetime
-
+from pathlib import Path
 
 log = logging.getLogger(__name__)
 

@@ -17,8 +17,7 @@ import logging
 import os
 import sys
 
-from qfileman.config import Config, CONFIG_DIR
-
+from qfileman.config import CONFIG_DIR, Config
 
 log = logging.getLogger(__name__)
 

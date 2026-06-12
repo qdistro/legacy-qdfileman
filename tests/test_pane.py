@@ -6,10 +6,8 @@ import os
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtWidgets import QListWidget, QMessageBox
-
 from qfileman.pane import FilePane
 
 

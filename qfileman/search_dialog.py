@@ -34,7 +34,6 @@ from PyQt6.QtWidgets import (
 from qfileman.search import FileSearch
 from qfileman.worker import Cancellation, run_in_thread
 
-
 log = logging.getLogger(__name__)
 
 # Hard cap on result rows so a pathological query doesn't hang the UI.

@@ -15,17 +15,15 @@ import hashlib
 import time
 
 import pytest
-
+from qfileman.plugins.builtin import checksum as checksum_mod
+from qfileman.plugins.builtin import folder_size as fs_mod
+from qfileman.search import FileSearch
 from qfileman.worker import (
     Cancellation,
     Cancelled,
     Worker,
     run_in_thread,
 )
-from qfileman.plugins.builtin import checksum as checksum_mod
-from qfileman.plugins.builtin import folder_size as fs_mod
-from qfileman.search import FileSearch
-
 
 # --------------------------------------------------------------------------
 # Cancellation token
@@ -250,8 +248,9 @@ def test_worker_handles_cancelled_exception(qtbot):
 # --------------------------------------------------------------------------
 
 def test_progress_runner_delivers_folder_size(qtbot):
-    import tempfile
     import pathlib
+    import tempfile
+
     from qfileman.worker import ProgressRunner
 
     tmp_path = pathlib.Path(tempfile.mkdtemp())
@@ -276,8 +275,9 @@ def test_progress_runner_delivers_folder_size(qtbot):
 
 
 def test_progress_runner_delivers_checksum(qtbot):
-    import tempfile
     import pathlib
+    import tempfile
+
     from qfileman.worker import ProgressRunner
 
     tmp_path = pathlib.Path(tempfile.mkdtemp())

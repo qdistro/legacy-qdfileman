@@ -13,7 +13,6 @@ import os
 from pathlib import Path
 from typing import Callable, Iterator
 
-
 log = logging.getLogger(__name__)
 
 # How often (in lines) a content search re-checks the cancel flag while

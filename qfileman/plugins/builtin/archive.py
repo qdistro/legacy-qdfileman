@@ -23,7 +23,6 @@ from typing import Sequence
 
 from qfileman.plugin import MenuProvider
 
-
 log = logging.getLogger(__name__)
 
 
@@ -342,7 +341,8 @@ class ArchivePlugin(MenuProvider):
     # ------------------------------------------------------------- plumbing
     def _run(self, title: str, argv: list[str], cwd: str) -> None:
         from qfileman.plugins.builtin._runner import (
-            missing_tools, run_command_dialog,
+            missing_tools,
+            run_command_dialog,
         )
 
         missing = missing_tools([argv[0]])

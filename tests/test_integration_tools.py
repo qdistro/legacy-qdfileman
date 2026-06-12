@@ -25,7 +25,6 @@ import shutil
 import subprocess
 
 import pytest
-
 from qfileman.plugins.builtin import archive as archive_mod
 from qfileman.plugins.builtin import checksum as checksum_mod
 from qfileman.plugins.builtin import folder_size as fs_mod

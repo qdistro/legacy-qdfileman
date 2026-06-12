@@ -32,7 +32,6 @@ from typing import Iterable
 from PyQt6.QtCore import QVariant
 from PyQt6.QtDBus import QDBusConnection, QDBusInterface
 
-
 log = logging.getLogger(__name__)
 
 

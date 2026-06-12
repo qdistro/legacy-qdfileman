@@ -24,7 +24,6 @@ from PyQt6.QtWidgets import (
 
 from qfileman.config import Config
 
-
 log = logging.getLogger(__name__)
 
 

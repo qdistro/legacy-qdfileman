@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from PyQt6.QtGui import QColor, QPalette
-
 from qfileman.theme import apply_theme
 
 

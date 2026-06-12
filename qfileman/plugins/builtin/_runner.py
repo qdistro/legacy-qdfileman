@@ -30,7 +30,6 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-
 log = logging.getLogger(__name__)
 
 

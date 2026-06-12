@@ -5,7 +5,6 @@ import time
 from pathlib import Path
 
 import pytest
-
 from qfileman.file_model import FileItem, FileModel, is_safe_rename_name
 
 
@@ -554,7 +553,7 @@ def test_file_model_copy_dir_overwrite_merges(tmp_dir):
 
 
 def test_would_clobber_helpers(tmp_dir):
-    from qfileman.file_model import would_clobber, effective_copy_target
+    from qfileman.file_model import effective_copy_target, would_clobber
 
     a = tmp_dir / "a.txt"
     a.write_text("x")
@@ -605,8 +604,8 @@ def test_file_model_copy_refuses_broken_symlink_dest(tmp_dir):
 
 
 def test_rename_exclusive_does_not_clobber(tmp_dir):
-    from qfileman.file_model import rename_exclusive
     import pytest as _pytest
+    from qfileman.file_model import rename_exclusive
 
     src = tmp_dir / "a.txt"
     src.write_text("source")

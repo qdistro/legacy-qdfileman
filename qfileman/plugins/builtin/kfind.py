@@ -19,7 +19,6 @@ import subprocess
 
 from qfileman.plugin import MenuProvider
 
-
 log = logging.getLogger(__name__)
 
 

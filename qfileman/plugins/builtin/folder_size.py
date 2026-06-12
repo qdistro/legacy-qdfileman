@@ -20,7 +20,6 @@ from typing import Callable
 
 from qfileman.plugin import MenuProvider
 
-
 log = logging.getLogger(__name__)
 
 
@@ -176,7 +175,11 @@ class FolderSizePlugin(MenuProvider):
     ) -> None:
         from PyQt6.QtCore import Qt
         from PyQt6.QtWidgets import (
-            QDialog, QDialogButtonBox, QLabel, QTreeWidget, QTreeWidgetItem,
+            QDialog,
+            QDialogButtonBox,
+            QLabel,
+            QTreeWidget,
+            QTreeWidgetItem,
             QVBoxLayout,
         )
 

@@ -27,7 +27,6 @@ import re
 
 from qfileman.plugin import MenuProvider
 
-
 log = logging.getLogger(__name__)
 
 
@@ -233,8 +232,16 @@ class MultiRenamePlugin(MenuProvider):
 
     def _open_dialog(self, path: str) -> None:
         from PyQt6.QtWidgets import (
-            QDialog, QDialogButtonBox, QFormLayout, QLabel, QLineEdit,
-            QListWidget, QListWidgetItem, QVBoxLayout, QCheckBox, QMessageBox,
+            QCheckBox,
+            QDialog,
+            QDialogButtonBox,
+            QFormLayout,
+            QLabel,
+            QLineEdit,
+            QListWidget,
+            QListWidgetItem,
+            QMessageBox,
+            QVBoxLayout,
         )
 
         directory = path if os.path.isdir(path) else os.path.dirname(path) or "."

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 from PyQt6.QtCore import Qt
-
 from qfileman.pane import FilePane
 from qfileman.split_container import SplitContainer
 

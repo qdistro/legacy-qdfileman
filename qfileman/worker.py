@@ -33,7 +33,6 @@ from typing import Any, Callable
 
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 
-
 log = logging.getLogger(__name__)
 
 

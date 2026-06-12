@@ -16,14 +16,12 @@ import zipfile
 from unittest.mock import patch
 
 import pytest
-
 from qfileman.plugin import MenuProvider, PluginManager
 from qfileman.plugins.builtin import archive as archive_mod
 from qfileman.plugins.builtin import checksum as checksum_mod
 from qfileman.plugins.builtin import multi_rename as mr_mod
 from qfileman.plugins.builtin import remote_copy as rc_mod
 from qfileman.plugins.builtin import rsync_sync as rs_mod
-
 
 # ---------------------------------------------------------------------------
 # Discovery: every new plugin must be findable by the manager.

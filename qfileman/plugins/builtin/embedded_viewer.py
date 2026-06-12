@@ -32,7 +32,6 @@ from typing import Literal
 
 from qfileman.plugin import MenuProvider
 
-
 log = logging.getLogger(__name__)
 
 
@@ -108,8 +107,15 @@ class EmbeddedViewerPlugin(MenuProvider):
         from PyQt6.QtCore import Qt
         from PyQt6.QtGui import QPixmap
         from PyQt6.QtWidgets import (
-            QButtonGroup, QDialog, QDialogButtonBox, QHBoxLayout, QLabel,
-            QPlainTextEdit, QRadioButton, QScrollArea, QStackedWidget,
+            QButtonGroup,
+            QDialog,
+            QDialogButtonBox,
+            QHBoxLayout,
+            QLabel,
+            QPlainTextEdit,
+            QRadioButton,
+            QScrollArea,
+            QStackedWidget,
             QVBoxLayout,
         )
 

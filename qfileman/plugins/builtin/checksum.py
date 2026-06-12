@@ -15,7 +15,6 @@ from typing import Callable
 
 from qfileman.plugin import MenuProvider
 
-
 log = logging.getLogger(__name__)
 
 
@@ -116,8 +115,13 @@ class ChecksumPlugin(MenuProvider):
 
     def _show_digest(self, path: str, algorithm: str, digest: str) -> None:
         from PyQt6.QtWidgets import (
-            QApplication, QDialog, QDialogButtonBox, QLabel, QLineEdit,
-            QPushButton, QVBoxLayout,
+            QApplication,
+            QDialog,
+            QDialogButtonBox,
+            QLabel,
+            QLineEdit,
+            QPushButton,
+            QVBoxLayout,
         )
 
         dlg = QDialog()

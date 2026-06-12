@@ -26,7 +26,6 @@ from urllib.parse import urlsplit
 
 from qfileman.plugin import MenuProvider
 
-
 log = logging.getLogger(__name__)
 
 
@@ -177,7 +176,8 @@ class RemoteCopyPlugin(MenuProvider):
     # ------------------------------------------------------------- plumbing
     def _run(self, tool: str, title: str, argv: list[str], stdin: str | None = None) -> None:
         from qfileman.plugins.builtin._runner import (
-            CommandDialog, missing_tools,
+            CommandDialog,
+            missing_tools,
         )
         missing = missing_tools([tool])
         if missing:

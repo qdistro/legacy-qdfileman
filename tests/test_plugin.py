@@ -1,10 +1,14 @@
 """Tests for the plugin system."""
 
 import os
-import pytest
 
+import pytest
 from qfileman.plugin import (
-    Plugin, MenuProvider, NavigationHook, FileFilter, PluginManager,
+    FileFilter,
+    MenuProvider,
+    NavigationHook,
+    Plugin,
+    PluginManager,
 )
 
 
@@ -70,9 +74,10 @@ def test_bookmarks_plugin_remove_appears_only_when_bookmarked(tmp_path, monkeypa
     """Regression: BookmarksPlugin must add the Remove entry when the
     right-clicked path is bookmarked (previously compared a QListWidgetItem
     against a path string and never matched)."""
-    from qfileman import config as config_mod
     from qfileman.config import Config
     from qfileman.plugins.builtin.bookmarks import BookmarksPlugin
+
+    from qfileman import config as config_mod
 
     monkeypatch.setattr(config_mod, "CONFIG_DIR", str(tmp_path))
     monkeypatch.setattr(config_mod, "CONFIG_FILE", str(tmp_path / "config.toml"))

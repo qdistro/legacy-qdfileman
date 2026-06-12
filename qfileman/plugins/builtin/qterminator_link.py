@@ -26,7 +26,6 @@ from typing import Optional
 
 from qfileman.plugin import MenuProvider, NavigationHook
 
-
 log = logging.getLogger(__name__)
 
 

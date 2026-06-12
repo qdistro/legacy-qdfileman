@@ -12,7 +12,7 @@ import logging
 import os
 import subprocess
 
-from PyQt6.QtCore import Qt, QSize, pyqtSignal
+from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
     QApplication,
@@ -31,9 +31,10 @@ from PyQt6.QtWidgets import (
 from qfileman.file_model import (
     FileModel,
     is_safe_rename_name,
+)
+from qfileman.file_model import (
     rename_exclusive as _rename_exclusive,
 )
-
 
 log = logging.getLogger(__name__)
 

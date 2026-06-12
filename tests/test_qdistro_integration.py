@@ -28,7 +28,6 @@ import pytest
 
 from qfileman import qdistro_integration as qi
 
-
 # ---------------------------------------------------------------------------
 # qsu_run — fail-visible when qsu is missing
 # ---------------------------------------------------------------------------

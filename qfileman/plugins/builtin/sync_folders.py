@@ -31,7 +31,6 @@ from typing import Iterable
 
 from qfileman.plugin import MenuProvider
 
-
 log = logging.getLogger(__name__)
 
 
@@ -136,9 +135,17 @@ class SyncFoldersPlugin(MenuProvider):
 
     def _show(self, path: str) -> None:
         from PyQt6.QtWidgets import (
-            QDialog, QDialogButtonBox, QFileDialog, QHBoxLayout, QLabel,
-            QLineEdit, QMessageBox, QPushButton, QTreeWidget,
-            QTreeWidgetItem, QVBoxLayout,
+            QDialog,
+            QDialogButtonBox,
+            QFileDialog,
+            QHBoxLayout,
+            QLabel,
+            QLineEdit,
+            QMessageBox,
+            QPushButton,
+            QTreeWidget,
+            QTreeWidgetItem,
+            QVBoxLayout,
         )
 
         dlg = QDialog()

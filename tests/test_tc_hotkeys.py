@@ -19,7 +19,6 @@ from __future__ import annotations
 import os
 
 import pytest
-
 from PyQt6.QtWidgets import QApplication
 from qfileman.window import FileManagerWindow
 
@@ -192,6 +191,7 @@ def test_f5_copy_action_runs_rsync(window, tmp_path, monkeypatch):
         return subprocess.run(argv).returncode
 
     import qfileman.window as wmod
+
     # The function is imported inside _copy_or_move, so patching the
     # _runner attribute is enough — the in-function `from ... import`
     # resolves through the module table at call time.

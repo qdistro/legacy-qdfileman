@@ -15,7 +15,6 @@ import os
 import textwrap
 
 import pytest
-
 from qfileman.plugin import MenuProvider, PluginManager
 from qfileman.plugins.builtin import embedded_viewer as ev_mod
 from qfileman.plugins.builtin import folder_size as fs_mod
@@ -25,7 +24,6 @@ from qfileman.plugins.builtin import open_with as ow_mod
 from qfileman.plugins.builtin import rclone as rc_mod
 from qfileman.plugins.builtin import sync_folders as sf_mod
 from qfileman.plugins.builtin import trash as tr_mod
-
 
 # ---------------------------------------------------------------------------
 # Discovery

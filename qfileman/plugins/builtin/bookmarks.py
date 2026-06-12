@@ -8,7 +8,6 @@ import logging
 from qfileman.config import Config
 from qfileman.plugin import MenuProvider
 
-
 log = logging.getLogger(__name__)
 
 

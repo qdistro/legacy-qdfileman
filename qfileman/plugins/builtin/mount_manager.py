@@ -28,7 +28,6 @@ from typing import Iterable
 
 from qfileman.plugin import MenuProvider
 
-
 log = logging.getLogger(__name__)
 
 
@@ -105,8 +104,15 @@ class MountManagerPlugin(MenuProvider):
 
     def _show(self, _path: str) -> None:
         from PyQt6.QtWidgets import (
-            QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QPushButton,
-            QTreeWidget, QTreeWidgetItem, QVBoxLayout, QMessageBox,
+            QDialog,
+            QDialogButtonBox,
+            QHBoxLayout,
+            QLabel,
+            QMessageBox,
+            QPushButton,
+            QTreeWidget,
+            QTreeWidgetItem,
+            QVBoxLayout,
         )
 
         devices = list_block_devices()

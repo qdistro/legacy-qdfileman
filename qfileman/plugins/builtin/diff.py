@@ -22,7 +22,6 @@ import shutil
 
 from qfileman.plugin import MenuProvider
 
-
 log = logging.getLogger(__name__)
 
 
@@ -86,8 +85,9 @@ class DiffPlugin(MenuProvider):
         self._run(src, path)
 
     def _diff_with_picker(self, path: str) -> None:
-        from PyQt6.QtWidgets import QFileDialog
         import os
+
+        from PyQt6.QtWidgets import QFileDialog
         other, _ = QFileDialog.getOpenFileName(
             None, f"Diff {os.path.basename(path)} with…",
             os.path.dirname(path) or "",
@@ -109,8 +109,9 @@ class DiffPlugin(MenuProvider):
                 self._warn(f"Failed to launch {argv[0]}: {e}")
             return
         # Fallback: run plain ``diff`` and show its output in our dialog.
-        from qfileman.plugins.builtin._runner import run_command_dialog
         import os
+
+        from qfileman.plugins.builtin._runner import run_command_dialog
         title = f"diff {os.path.basename(file_a)} {os.path.basename(file_b)}"
         run_command_dialog(title, argv, notify=False)
 
