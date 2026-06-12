@@ -29,7 +29,7 @@ class Config:
     def _load(self):
         """Load config from file or use defaults."""
         self._data = self._default_config()
-        
+
         if os.path.isfile(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, "rb") as f:

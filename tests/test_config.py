@@ -51,23 +51,23 @@ def test_config_set_nested(fresh_config):
 def test_config_bookmarks(fresh_config):
     """Test bookmark management."""
     config = Config()
-    
+
     # Initially empty
     assert config.get_bookmarks() == []
-    
+
     # Add bookmark
     config.add_bookmark("/home/user/Documents", "Docs")
     bookmarks = config.get_bookmarks()
     assert len(bookmarks) == 1
     assert bookmarks[0]["path"] == "/home/user/Documents"
     assert bookmarks[0]["name"] == "Docs"
-    
+
     # Add another
     config.add_bookmark("/home/user/Downloads")
     bookmarks = config.get_bookmarks()
     assert len(bookmarks) == 2
     assert bookmarks[1]["name"] == "Downloads"  # Auto-named
-    
+
     # Remove bookmark
     config.remove_bookmark("/home/user/Documents")
     bookmarks = config.get_bookmarks()

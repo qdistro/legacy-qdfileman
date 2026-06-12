@@ -10,7 +10,7 @@ class FilterPlugin(FileFilter):
     name = "filter"
     description = "Filter files by extension or pattern"
     version = "1.0"
-    
+
     def __init__(self):
         super().__init__()
         self._extensions = set()
