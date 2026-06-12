@@ -3,9 +3,8 @@
 import os
 
 import pytest
-from qfileman.config import Config
-
 from qfileman import config as config_mod
+from qfileman.config import Config
 
 
 @pytest.fixture

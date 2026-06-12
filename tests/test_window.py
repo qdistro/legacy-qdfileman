@@ -582,9 +582,8 @@ def test_navigation_hook_leave_called_on_successful_move(window, tmp_dir):
 
 def test_apply_preferences_propagates_to_model(window, tmp_dir, monkeypatch, tmp_path):
     """After Config is mutated, _apply_preferences pushes settings into model+UI."""
-    from qfileman.config import Config
-
     from qfileman import config as config_mod
+    from qfileman.config import Config
 
     monkeypatch.setattr(config_mod, "CONFIG_DIR", str(tmp_path))
     monkeypatch.setattr(config_mod, "CONFIG_FILE", str(tmp_path / "config.toml"))
@@ -776,9 +775,8 @@ def test_split_broadcasts_plugin_manager(window, tmp_dir):
 
 
 def test_apply_preferences_applies_to_all_panes(window, tmp_dir, tmp_path, monkeypatch):
-    from qfileman.config import Config
-
     from qfileman import config as config_mod
+    from qfileman.config import Config
 
     monkeypatch.setattr(config_mod, "CONFIG_DIR", str(tmp_path))
     monkeypatch.setattr(config_mod, "CONFIG_FILE", str(tmp_path / "config.toml"))
