@@ -27,7 +27,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 from qfileman.plugins.builtin import open_in_disposable as oid
 
 
