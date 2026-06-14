@@ -661,6 +661,38 @@ def test_copy_move_conflict_rsync_dir_detects_child_clash(tmp_dir):
     assert copy_move_conflict(str(srcdir), str(dest), rsync=False) is None
 
 
+def test_effective_target_symlink_to_dir(tmp_dir):
+    """A symlink pointing at a directory is treated as a directory by
+    shutil.copy2/move (they follow os.path.isdir), so the source lands at
+    ``link/src.name`` — not overwriting the link. A symlink-to-file stays a
+    leaf (overwrite). This mirrors what shutil actually does on disk."""
+    from qfileman.file_model import copy_move_conflict, effective_copy_target
+
+    src = tmp_dir / "a.txt"
+    src.write_text("x")
+
+    realdir = tmp_dir / "realdir"
+    realdir.mkdir()
+    dirlink = tmp_dir / "dirlink"
+    dirlink.symlink_to(realdir)
+
+    # copy/move of src into the symlinked dir lands at dirlink/a.txt.
+    assert effective_copy_target(str(src), str(dirlink)) == dirlink / "a.txt"
+    # No child yet -> no clobber; once dirlink/a.txt exists, it is the clash.
+    assert copy_move_conflict(str(src), str(dirlink)) is None
+    (realdir / "a.txt").write_text("victim")
+    assert copy_move_conflict(str(src), str(dirlink)) == "a.txt"
+
+    # Regression: a symlink to a *file* is a leaf -> resolves to the link
+    # itself (overwrite), never appending src.name.
+    realfile = tmp_dir / "realfile"
+    realfile.write_text("y")
+    filelink = tmp_dir / "filelink"
+    filelink.symlink_to(realfile)
+    assert effective_copy_target(str(src), str(filelink)) == filelink
+    assert copy_move_conflict(str(src), str(filelink)) == "filelink"
+
+
 def test_copy_move_conflict_file_into_dir(tmp_dir):
     from qfileman.file_model import copy_move_conflict
     src = tmp_dir / "a.txt"

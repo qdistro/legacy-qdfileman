@@ -144,7 +144,12 @@ def copy_move_conflict(source, dest, *, rsync: bool = False):
 
 
 def _effective_target(src: Path, dst: Path) -> Path:
-    if dst.is_dir() and not dst.is_symlink():
+    # ``Path.is_dir()`` follows symlinks, matching shutil.copy2/move, which use
+    # os.path.isdir(dst) and so treat a symlink-to-directory AS a directory:
+    # they write to ``dst/basename(src)``. Mirror that — a symlink pointing at
+    # a directory must land at ``dst/src.name``, not overwrite the link itself.
+    # A symlink-to-file (is_dir() False) or broken/absent dst stays a leaf.
+    if dst.is_dir():
         return dst / src.name
     return dst
 
