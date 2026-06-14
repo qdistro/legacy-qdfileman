@@ -297,7 +297,7 @@ def test_window_context_menu_directory(window, tmp_dir):
         assert "Copy Path" in added_texts, f"Copy Path should be in menu, got {added_texts}"
 
 
-def test_delete_file(window, tmp_dir):
+def test_delete_file(window, tmp_dir, qtbot):
     """Test moving a file to trash."""
     test_file = tmp_dir / "to_delete.txt"
     test_file.write_text("delete me")
@@ -322,6 +322,15 @@ def test_delete_file(window, tmp_dir):
             patch('qfileman.plugins.builtin.trash.trash_argv', return_value=["true"]), \
             patch('qfileman.pane.subprocess.run', side_effect=fake_run):
         window._delete()
+        # The trash op now runs off the GUI thread and the list refresh is
+        # queued back on the GUI thread on completion; wait for both.
+        qtbot.waitUntil(
+            lambda: "to_delete.txt" not in [
+                window.file_list.item(i).text()
+                for i in range(window.file_list.count())
+            ],
+            timeout=5000,
+        )
 
     # File should be gone
     assert not test_file.exists(), "File should be deleted"
@@ -354,7 +363,7 @@ def test_delete_file_warns_when_no_trash_backend(window, tmp_dir):
     assert "No system trash backend" in warn.call_args.args[2]
 
 
-def test_delete_directory(window, tmp_dir):
+def test_delete_directory(window, tmp_dir, qtbot):
     """Test moving a directory to trash."""
     test_dir = tmp_dir / "to_delete_dir"
     test_dir.mkdir()
@@ -379,9 +388,21 @@ def test_delete_directory(window, tmp_dir):
             patch('qfileman.plugins.builtin.trash.trash_argv', return_value=["true"]), \
             patch('qfileman.pane.subprocess.run', side_effect=fake_run):
         window._delete()
+        # The trash op now runs off the GUI thread and the list refresh is
+        # queued back on the GUI thread on completion; wait for both.
+        qtbot.waitUntil(
+            lambda: not test_dir.exists()
+            and "to_delete_dir" not in [
+                window.file_list.item(i).text()
+                for i in range(window.file_list.count())
+            ],
+            timeout=5000,
+        )
 
     # Directory should be gone
     assert not test_dir.exists(), "Directory should be deleted"
+    names = [window.file_list.item(i).text() for i in range(window.file_list.count())]
+    assert "to_delete_dir" not in names
 
 
 def test_rename(window, tmp_dir):
@@ -862,20 +883,44 @@ def test_copy_fallback_prompts_and_aborts_on_no(window, tmp_dir):
     assert src.read_text() == "source"
 
 
-def test_copy_fallback_overwrites_on_yes(window, tmp_dir):
+def test_copy_fallback_overwrites_on_yes(window, tmp_dir, qtbot):
     src = tmp_dir / "src.txt"
     src.write_text("source")
     victim = tmp_dir / "dst.txt"
     victim.write_text("victim")
     window._update_path(str(tmp_dir))
     _select(window, "src.txt")
+    # Spy on the launching source pane's _refresh: an overwrite doesn't change
+    # the visible item names, so the only proof the queued GUI-thread refresh
+    # callback fired is that _refresh was actually invoked after completion.
+    source_pane = window._active_pane
+    real_refresh = source_pane._refresh
+    refresh_calls = {"n": 0}
+
+    def counting_refresh():
+        refresh_calls["n"] += 1
+        return real_refresh()
+
+    source_pane._refresh = counting_refresh
+    calls_before = refresh_calls["n"]
     with patch("shutil.which", return_value=None), \
             patch("PyQt6.QtWidgets.QInputDialog.getText",
                   return_value=(str(victim), True)), \
             patch("qfileman.pane.QMessageBox.question",
                   return_value=QMessageBox.StandardButton.Yes):
         window._copy_or_move(move=False)
+        # The shutil fallback now runs off the GUI thread and the source pane
+        # refresh is queued back on completion. Wait for the filesystem side
+        # effect, then for the queued GUI-thread refresh callback to fire.
+        qtbot.waitUntil(lambda: victim.read_text() == "source", timeout=5000)
+        qtbot.waitUntil(
+            lambda: refresh_calls["n"] > calls_before, timeout=5000
+        )
+    assert refresh_calls["n"] > calls_before, \
+        "completion refresh callback did not run on the source pane"
     assert victim.read_text() == "source"
+    names = {window.file_list.item(i).text() for i in range(window.file_list.count())}
+    assert {"src.txt", "dst.txt"}.issubset(names)
 
 
 def test_move_fallback_prompts_and_aborts_on_no(window, tmp_dir):
@@ -895,7 +940,7 @@ def test_move_fallback_prompts_and_aborts_on_no(window, tmp_dir):
     assert victim.read_text() == "victim"
 
 
-def test_copy_to_new_dest_does_not_prompt(window, tmp_dir):
+def test_copy_to_new_dest_does_not_prompt(window, tmp_dir, qtbot):
     """No existing destination → no overwrite prompt, copy proceeds."""
     src = tmp_dir / "src.txt"
     src.write_text("source")
@@ -907,8 +952,21 @@ def test_copy_to_new_dest_does_not_prompt(window, tmp_dir):
                   return_value=(str(dest), True)), \
             patch("qfileman.pane.QMessageBox.question") as q:
         window._copy_or_move(move=False)
+        # The shutil fallback now runs off the GUI thread and the source pane
+        # refresh is queued back on completion; wait for the filesystem side
+        # effect *and* the new entry to surface in the (refreshed) list.
+        qtbot.waitUntil(
+            lambda: dest.exists() and dest.read_text() == "source"
+            and "fresh.txt" in [
+                window.file_list.item(i).text()
+                for i in range(window.file_list.count())
+            ],
+            timeout=5000,
+        )
     q.assert_not_called()
     assert dest.read_text() == "source"
+    names = [window.file_list.item(i).text() for i in range(window.file_list.count())]
+    assert "fresh.txt" in names
 
 
 def test_copy_rsync_path_blocked_by_decline(window, tmp_dir):

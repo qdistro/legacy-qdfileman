@@ -361,22 +361,48 @@ class FilePane(QWidget):
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
-        try:
-            from qfileman.plugins.builtin.trash import trash_argv
-            argv = trash_argv(path)
-            if argv is None:
-                QMessageBox.warning(
-                    self,
-                    "Move to Trash",
-                    "No system trash backend is available. Use the Trash plugin "
-                    "or remove the file outside QFileMan for permanent deletion.",
-                )
-                return
+        from qfileman.plugins.builtin.trash import trash_argv
+        argv = trash_argv(path)
+        if argv is None:
+            QMessageBox.warning(
+                self,
+                "Move to Trash",
+                "No system trash backend is available. Use the Trash plugin "
+                "or remove the file outside QFileMan for permanent deletion.",
+            )
+            return
+
+        # Run the trash backend off the GUI thread — it's a subprocess and a
+        # slow/large trash op would otherwise block the event loop, even with
+        # the timeout. We reuse the project's ProgressRunner (the off-thread
+        # mechanism the folder-size and checksum call sites use); the worker
+        # keeps the existing subprocess.run(..., timeout=15) call verbatim so
+        # the 15s timeout and error reporting are preserved.
+        from qfileman.worker import ProgressRunner
+
+        def work(cancel, progress):
+            progress(0, -1, f"Moving '{name}' to Trash…")
+            cancel.raise_if_cancelled()
             result = subprocess.run(
                 argv, capture_output=True, text=True, timeout=15,
             )
             if result.returncode != 0:
                 raise OSError(result.stderr.strip() or result.stdout.strip())
-            self._refresh()
-        except (OSError, subprocess.TimeoutExpired) as e:
-            QMessageBox.warning(self, "Error", f"Could not move to Trash: {e}")
+
+        def on_error(message: str) -> None:
+            QMessageBox.warning(self, "Error", f"Could not move to Trash: {message}")
+
+        runner = ProgressRunner(
+            work, title="Move to Trash", label=f"Moving '{name}' to Trash…",
+            parent=self,
+            on_result=lambda _value: self._refresh(),
+            on_error=on_error,
+        )
+        # Keep the runner alive until the worker thread finishes; clear the
+        # reference once it's done so the attribute doesn't dangle at a
+        # deleted runner.
+        self._delete_runner = runner
+        runner._worker.finished.connect(
+            lambda: setattr(self, "_delete_runner", None)
+        )
+        runner.start()

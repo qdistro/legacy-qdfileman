@@ -131,7 +131,7 @@ def test_pane_double_click_file_invokes_xdg_open(pane, tmp_dir):
     mock_popen.assert_called_once_with(["xdg-open", str(tmp_dir / "file1.txt")])
 
 
-def test_pane_delete_confirms_and_removes(pane, tmp_dir):
+def test_pane_delete_confirms_and_removes(pane, tmp_dir, qtbot):
     victim = tmp_dir / "delete_me.txt"
     victim.write_text("x")
     pane._update_path(str(tmp_dir))
@@ -156,7 +156,20 @@ def test_pane_delete_confirms_and_removes(pane, tmp_dir):
         "qfileman.pane.subprocess.run", side_effect=fake_run
     ) as run:
         pane._delete()
+        # The trash op now runs off the GUI thread and the list refresh is
+        # queued back on the GUI thread on completion; wait for both the
+        # filesystem side effect and the model-driven list update.
+        qtbot.waitUntil(
+            lambda: not victim.exists()
+            and "delete_me.txt" not in [
+                pane.file_list.item(i).text()
+                for i in range(pane.file_list.count())
+            ],
+            timeout=5000,
+        )
     assert not victim.exists()
+    names = [pane.file_list.item(i).text() for i in range(pane.file_list.count())]
+    assert "delete_me.txt" not in names
     run.assert_called_once()
 
 

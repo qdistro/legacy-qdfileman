@@ -644,19 +644,68 @@ class FileManagerWindow(QMainWindow):
             source = path + "/" if os.path.isdir(path) else path
             argv = rsync_argv(source, dest, move=move)
             run_command_dialog(f"{title} {os.path.basename(path)}", argv)
-        else:
-            # No rsync: best-effort one-shot copy, no progress bar.
-            try:
-                if move:
-                    shutil.move(path, dest)
-                elif os.path.isdir(path):
-                    shutil.copytree(path, dest)
-                else:
-                    shutil.copy2(path, dest)
-            except (OSError, shutil.Error) as e:
-                QMessageBox.warning(self, title, f"{title} failed: {e}")
-                return
-        self._refresh()
+            self._refresh()
+            return
+
+        # No rsync: do the shutil copy/move off the GUI thread (a large
+        # tree would otherwise freeze the UI for the whole operation). The
+        # overwrite prompt / clobber guard above already ran synchronously;
+        # only the blocking filesystem call goes to the worker. We reuse the
+        # project's ProgressRunner — the same off-thread mechanism the
+        # folder-size and checksum call sites use.
+        from qfileman.worker import ProgressRunner
+
+        label = f"{title} {os.path.basename(path)}…"
+        # Capture the launching pane and the affected destination directory on
+        # the GUI thread now: the op is async, so the active pane may differ by
+        # the time on_result fires. shutil drops the source at ``dest``, so the
+        # destination view that changes is its parent directory.
+        source_pane = self._active_pane
+        # shutil places the source *inside* ``dest`` when ``dest`` is an
+        # existing directory, so the file actually lands at the effective
+        # target (``dest`` itself, or ``dest/basename`` when ``dest`` is a
+        # directory). The visible view that changes is that target's parent.
+        from qfileman.file_model import effective_copy_target
+        final_target = effective_copy_target(path, dest)
+        dest_dir = os.path.dirname(os.path.abspath(str(final_target)))
+
+        def work(cancel, progress):
+            progress(0, -1, label)
+            cancel.raise_if_cancelled()
+            if move:
+                shutil.move(path, dest)
+            elif os.path.isdir(path):
+                shutil.copytree(path, dest)
+            else:
+                shutil.copy2(path, dest)
+
+        def on_result(_value) -> None:
+            # Refresh the pane that launched the op (if it still exists) plus
+            # any pane currently showing the destination directory — a
+            # successful copy/move changes both the source and target views.
+            panes = self._split_root.find_panes()
+            for pane in panes:
+                if pane is source_pane or (
+                    os.path.abspath(pane.current_path) == dest_dir
+                ):
+                    pane._refresh()
+
+        def on_error(message: str) -> None:
+            QMessageBox.warning(self, title, f"{title} failed: {message}")
+
+        runner = ProgressRunner(
+            work, title=title, label=label, parent=self,
+            on_result=on_result,
+            on_error=on_error,
+        )
+        # Keep the runner alive until the worker thread finishes; clear the
+        # reference once it's done so the attribute doesn't dangle at a
+        # deleted runner.
+        self._copy_move_runner = runner
+        runner._worker.finished.connect(
+            lambda: setattr(self, "_copy_move_runner", None)
+        )
+        runner.start()
 
     def _new_file(self) -> None:
         """Shift+F4 — Create an empty file and open it for editing."""
