@@ -261,7 +261,11 @@ class SearchDialog(QDialog):
         # superseded worker that outlived wait_for_search()'s timeout could
         # still have queued batches in flight; checking the emitter (not just
         # _busy) keeps its stale results out of the new search's list.
-        if self.sender() is not self._worker or not self._busy:
+        # QThread.finished and the worker's queued batch can reach the GUI
+        # event queue in either order. Identity is the stale-run boundary;
+        # `_busy` is deliberately not one, because the current worker may
+        # have stopped just before its final queued rows are delivered.
+        if self.sender() is not self._worker:
             return
         for display, path in rows:
             item = QListWidgetItem(display)
@@ -272,7 +276,10 @@ class SearchDialog(QDialog):
     def _on_done(self, count: int, truncated: bool) -> None:
         # Same identity-gate as _on_batch: a stale worker's terminal status
         # must not overwrite the current search's count.
-        if self.sender() is not self._worker or not self._busy:
+        # As with batches, a valid queued done signal may be delivered just
+        # after QThread.finished cleared `_busy`. The worker identity remains
+        # current until another search starts, so it is the sufficient gate.
+        if self.sender() is not self._worker:
             return
         self._count = count
         suffix = " (truncated)" if truncated else ""
