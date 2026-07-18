@@ -61,6 +61,10 @@ def rsync_argv(source: str, dest: str, *, move: bool = False,
         argv.append("--dry-run")
     if move:
         argv.append("--remove-source-files")
+    # ``--`` terminates option parsing so a source/dest whose name starts
+    # with ``-`` (e.g. a file literally named ``-e sh -c '…'``) is treated
+    # as a path, not an rsync option → no argv-injection.
+    argv.append("--")
     argv.extend([source, dest])
     return argv
 

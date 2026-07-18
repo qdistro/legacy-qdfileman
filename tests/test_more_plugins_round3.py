@@ -400,6 +400,15 @@ def test_rclone_argv_dry_run():
     assert "--dry-run" in argv
 
 
+def test_rclone_argv_dash_path_after_terminator():
+    # A leading-dash source must be a path, not an rclone flag: it has to
+    # appear after the ``--`` terminator (argv-injection guard).
+    argv = rc_mod.rclone_argv("copy", "--config=/evil", "r:dst")
+    assert "--" in argv
+    assert argv.index("--") < argv.index("--config=/evil")
+    assert argv[-2:] == ["--config=/evil", "r:dst"]
+
+
 def test_rclone_menu_hidden_when_no_binary(monkeypatch):
     monkeypatch.setattr(rc_mod.shutil, "which", lambda _n: None)
     assert rc_mod.RclonePlugin().get_menu_items("/tmp/foo") == []

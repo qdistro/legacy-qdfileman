@@ -47,7 +47,8 @@ def build_argv(file_a: str, file_b: str) -> list[str]:
     """Build a diff argv. Falls back to plain ``diff`` if no GUI tool is found."""
     tool = choose_tool()
     if tool is None:
-        return ["diff", "-u", file_a, file_b]
+        # ``--`` so a file named ``-something`` is a path, not a diff option.
+        return ["diff", "-u", "--", file_a, file_b]
     _name, prefix = tool
     return [*prefix, file_a, file_b]
 

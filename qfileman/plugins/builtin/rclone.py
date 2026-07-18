@@ -64,6 +64,9 @@ def rclone_argv(operation: str, source: str, dest: str,
     ]
     if dry_run:
         argv.append("--dry-run")
+    # ``--`` ends flag parsing (rclone uses pflag, which honors it) so a
+    # leading-dash source/dest is a path, not an injected option.
+    argv.append("--")
     argv.extend([source, dest])
     return argv
 

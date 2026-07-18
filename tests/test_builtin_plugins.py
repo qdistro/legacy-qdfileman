@@ -466,6 +466,39 @@ def test_rsync_argv_remote_dest_passes_through():
     assert argv[-1] == "user@host:/dst/"
 
 
+def test_rsync_argv_dash_path_after_terminator():
+    # A leading-dash source (e.g. ``-e sh -c '…'``) must be a path, not an
+    # rsync option: it has to appear after the ``--`` terminator.
+    argv = rs_mod.rsync_argv("-e sh -c evil", "/dst/")
+    assert "--" in argv
+    assert argv.index("--") < argv.index("-e sh -c evil")
+    assert argv[-2:] == ["-e sh -c evil", "/dst/"]
+
+
+def test_scp_argv_leading_dash_source_made_safe():
+    # scp has no ``--``; a leading-dash local source is prefixed with ``./``.
+    argv = rc_mod.scp_argv("-oProxyCommand=evil", "user@host:/dst")
+    assert "-oProxyCommand=evil" not in argv
+    assert "./-oProxyCommand=evil" in argv
+    assert argv[-1] == "user@host:/dst"
+
+
+def test_scp_argv_leading_dash_source_with_colon_made_safe():
+    # A colon in the local filename must NOT let it masquerade as a remote
+    # spec and slip through unprefixed (would be an scp -o option → RCE).
+    argv = rc_mod.scp_argv("-oProxyCommand=sh:foo", "user@host:/dst")
+    assert "-oProxyCommand=sh:foo" not in argv
+    assert "./-oProxyCommand=sh:foo" in argv
+    assert argv[-1] == "user@host:/dst"
+
+
+def test_scp_argv_ordinary_source_untouched():
+    # A normal local source (no leading dash) is passed through verbatim.
+    argv = rc_mod.scp_argv("/src/file", "user@host:/dst")
+    assert "/src/file" in argv
+    assert "./-" not in " ".join(argv)
+
+
 # ---------------------------------------------------------------------------
 # checksum
 # ---------------------------------------------------------------------------

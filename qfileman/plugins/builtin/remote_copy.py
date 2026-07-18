@@ -42,9 +42,30 @@ def is_ftp_dest(dest: str) -> bool:
     return bool(FTP_DEST_RE.match(dest))
 
 
+def _local_dash_safe(path: str) -> str:
+    """Prefix a leading-dash local path with ``./`` so scp reads it as a path,
+    not an option. scp has no ``--`` option terminator, so this is the standard
+    mitigation.
+
+    This is applied to the *source*, which in this plugin is always the locally
+    selected file/dir — never a remote spec. We therefore guard on the leading
+    dash unconditionally: an ``is_scp_dest``-style colon check must NOT exempt
+    it, since a hostile local filename can contain a ``:`` (e.g.
+    ``-oProxyCommand=sh:foo``) and would otherwise slip through as an scp
+    option → command execution.
+    """
+    if path.startswith("-"):
+        return os.path.join(".", path)
+    return path
+
+
 def scp_argv(source: str, dest: str) -> list[str]:
-    """``scp -rp source dest``. ``-r`` is harmless for files and required for dirs."""
-    return ["scp", "-rp", source, dest]
+    """``scp -rp source dest``. ``-r`` is harmless for files and required for dirs.
+
+    The source is the locally selected file/dir; a leading-dash name is made
+    scp-safe via ``./`` since scp offers no ``--`` terminator.
+    """
+    return ["scp", "-rp", _local_dash_safe(source), dest]
 
 
 def sftp_batch_argv(source: str, dest: str) -> tuple[list[str], str] | None:

@@ -81,7 +81,16 @@ def test_diff_build_argv_uses_chosen_tool(monkeypatch):
 
 def test_diff_build_argv_falls_back_to_plain_diff(monkeypatch):
     monkeypatch.setattr(diff_mod, "choose_tool", lambda: None)
-    assert diff_mod.build_argv("/a", "/b") == ["diff", "-u", "/a", "/b"]
+    assert diff_mod.build_argv("/a", "/b") == ["diff", "-u", "--", "/a", "/b"]
+
+
+def test_diff_build_argv_plain_diff_dash_path_not_an_option(monkeypatch):
+    # A file literally named ``-e`` must land after ``--`` so plain diff
+    # cannot mistake it for an option (argv-injection guard).
+    monkeypatch.setattr(diff_mod, "choose_tool", lambda: None)
+    argv = diff_mod.build_argv("-e", "/b")
+    assert "--" in argv
+    assert argv.index("--") < argv.index("-e")
 
 
 def test_diff_menu_items_offer_against_source_only_when_set(tmp_path):

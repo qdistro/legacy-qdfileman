@@ -100,7 +100,7 @@ def dry_run_argv(src: str, dst: str) -> list[str]:
     """Return the rsync argv we'd run for a folder sync dry-run."""
     return [
         "rsync", "-a", "--delete", "--itemize-changes", "--dry-run",
-        _trailing_slash(src), _trailing_slash(dst),
+        "--", _trailing_slash(src), _trailing_slash(dst),
     ]
 
 
@@ -110,7 +110,7 @@ def apply_argv(src: str, dst: str) -> list[str]:
         "rsync", "-a", "--delete",
         "--partial", "--append-verify", "--inplace",
         "--info=progress2",
-        _trailing_slash(src), _trailing_slash(dst),
+        "--", _trailing_slash(src), _trailing_slash(dst),
     ]
 
 
