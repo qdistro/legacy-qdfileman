@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
-from qfileman.search_dialog import SearchDialog
+import threading
+
+from PyQt6 import sip
+from PyQt6.QtCore import QCoreApplication, QEvent, Qt
+
+# isort: split
+import qfileman.search_dialog as search_dialog_mod
+from qfileman.search_dialog import SearchDialog, _SearchWorker
+from qfileman.worker import _LIVE
 
 
 def _result_paths(dlg):
@@ -102,7 +109,6 @@ def test_search_dialog_zero_matches_status(qapp, tmp_tree):
 # Threading behaviour: the walk must not block the GUI thread, must be
 # cancellable, and a fresh search must supersede an in-flight one.
 # --------------------------------------------------------------------------
-
 def test_search_runs_on_worker_thread(qapp, tmp_tree):
     """_run_search returns immediately with the walk still in flight."""
     dlg = SearchDialog(tmp_tree)
@@ -206,3 +212,110 @@ def test_stale_worker_signals_are_ignored(qapp, tmp_tree):
     finally:
         dlg._busy = False
         dlg.deleteLater()
+
+
+def test_search_completion_waits_for_done_and_thread_stop(qapp, tmp_tree):
+    """The synchronous completion boundary includes both queued outcomes.
+
+    A worker can stop before its queued ``done`` reaches the GUI thread (or
+    vice versa).  Reporting idle at either half-boundary lets a caller delete
+    the dialog while a queued callback still targets it.
+    """
+    dlg = SearchDialog(tmp_tree)
+    try:
+        dlg._busy = True
+        dlg._generation = 7
+
+        dlg._on_thread_finished(7)
+        assert dlg.is_searching is True, (
+            "thread exit alone exposed a half-delivered search as complete"
+        )
+
+        dlg._accept_done(7, 3, False)
+        assert dlg.is_searching is False
+        assert dlg.status_label.text() == "3 matches"
+    finally:
+        dlg.deleteLater()
+
+
+def test_search_generation_gate_rejects_stale_queued_data(qapp, tmp_tree):
+    """A deleted/superseded sender is rejected by token, not sender()."""
+    dlg = SearchDialog(tmp_tree)
+    try:
+        dlg._generation = 2
+        dlg._accept_batch(1, [("BOGUS", "/bogus")])
+        dlg._accept_done(1, 999, True)
+        assert dlg.results.count() == 0
+        assert "999" not in dlg.status_label.text()
+    finally:
+        dlg.deleteLater()
+
+
+def test_repeated_search_workers_deliver_then_destroy(qapp, tmp_tree):
+    """Real worker threads fully deliver and drain before completion.
+
+    Repeating the native QThread lifecycle makes the queued ``done`` versus
+    ``finished`` ordering race observable without calling private result
+    slots directly.  Every iteration must deliver its result, delete both
+    native Qt objects, and leave the shared live-thread registry empty.
+    """
+    for iteration in range(100):
+        dlg = SearchDialog(tmp_tree)
+        try:
+            dlg.pattern_edit.setText("*.py")
+            dlg._run_search()
+            worker = dlg._worker
+            thread = dlg._thread
+
+            assert dlg.wait_for_search(), f"search {iteration} wedged"
+            assert dlg.results.count() == 1, \
+                f"search {iteration} completed before result delivery"
+            assert dlg.status_label.text() == "1 match"
+            assert not _LIVE, f"search {iteration} left a live QThread"
+            assert sip.isdeleted(worker), \
+                f"search {iteration} leaked its native worker"
+            assert sip.isdeleted(thread), \
+                f"search {iteration} leaked its native thread"
+        finally:
+            dlg.deleteLater()
+            qapp.processEvents()
+
+
+def test_dialog_deleted_between_done_and_thread_stop_is_safe(
+    qapp, qtbot, tmp_tree, monkeypatch
+):
+    """Destroying the dialog cannot leave a queued finish targeting it."""
+    release_thread = threading.Event()
+
+    class PausingSearchWorker(_SearchWorker):
+        def _search(self) -> None:
+            # Deliver the terminal outcome, then keep the real native thread
+            # alive so the test can destroy its receiver before ``finished``.
+            self._emit_done(0, False)
+            assert release_thread.wait(5), "test did not release worker thread"
+
+    monkeypatch.setattr(search_dialog_mod, "_SearchWorker", PausingSearchWorker)
+    dlg = SearchDialog(tmp_tree)
+    dlg.pattern_edit.setText("*.no_such_ext")
+    dlg._run_search()
+    worker = dlg._worker
+    thread = dlg._thread
+    finish_relay = thread._qfileman_finish_relay
+
+    try:
+        qtbot.waitUntil(lambda: dlg._done_received, timeout=5000)
+        assert thread.isRunning(), "thread stopped before destruction window"
+
+        dlg.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        assert sip.isdeleted(dlg), "dialog was not natively destroyed"
+        assert sip.isdeleted(finish_relay), \
+            "dialog destruction left its finish receiver alive"
+
+        release_thread.set()
+        qtbot.waitUntil(lambda: not _LIVE, timeout=5000)
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        assert sip.isdeleted(worker), "native worker survived thread shutdown"
+        assert sip.isdeleted(thread), "native thread wrapper survived shutdown"
+    finally:
+        release_thread.set()

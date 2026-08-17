@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from PyQt6.QtCore import QObject, Qt, pyqtSignal
+from PyQt6.QtCore import QObject, Qt, pyqtSignal, pyqtSlot
 from PyQt6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -51,8 +51,10 @@ class _SearchWorker(QObject):
     """
 
     batch = pyqtSignal(list)
+    tagged_batch = pyqtSignal(int, list)
     #: ``(count, truncated)`` once the walk ends (success or cancel).
     done = pyqtSignal(int, bool)
+    tagged_done = pyqtSignal(int, int, bool)
     finished = pyqtSignal()
 
     def __init__(
@@ -63,6 +65,7 @@ class _SearchWorker(QObject):
         hidden: bool,
         case_sensitive: bool,
         cancel: Cancellation,
+        generation: int | None = None,
     ) -> None:
         super().__init__()
         self._root = root
@@ -71,13 +74,14 @@ class _SearchWorker(QObject):
         self._hidden = hidden
         self._case_sensitive = case_sensitive
         self.cancel = cancel
+        self._generation = generation
 
     def run(self) -> None:
         try:
             self._search()
         except Exception as exc:  # noqa: BLE001 — never crash the UI thread
             log.warning("search worker failed: %s", exc)
-            self.done.emit(0, False)
+            self._emit_done(0, False)
         finally:
             self.finished.emit()
 
@@ -90,7 +94,10 @@ class _SearchWorker(QObject):
         def flush() -> None:
             nonlocal pending
             if pending:
-                self.batch.emit(pending)
+                if self._generation is None:
+                    self.batch.emit(pending)
+                else:
+                    self.tagged_batch.emit(self._generation, pending)
                 pending = []
 
         if self._content:
@@ -126,7 +133,35 @@ class _SearchWorker(QObject):
                     break
 
         flush()
-        self.done.emit(count, truncated)
+        self._emit_done(count, truncated)
+
+    def _emit_done(self, count: int, truncated: bool) -> None:
+        if self._generation is None:
+            self.done.emit(count, truncated)
+        else:
+            self.tagged_done.emit(self._generation, count, truncated)
+
+
+class _ThreadFinishRelay(QObject):
+    """Deliver one thread stop only while its SearchDialog still exists.
+
+    The relay is a native child of the dialog, so Qt destroys it and removes
+    its queued connections with the dialog.  Unlike an anonymous Python
+    closure, this bound QObject slot therefore cannot run later against a
+    deleted dialog wrapper.
+    """
+
+    def __init__(self, dialog: SearchDialog, generation: int) -> None:
+        super().__init__(dialog)
+        self._generation = generation
+
+    @pyqtSlot()
+    def deliver(self) -> None:
+        dialog = self.parent()
+        if dialog is None:
+            return
+        dialog._on_thread_finished(self._generation)
+        self.deleteLater()
 
 
 class SearchDialog(QDialog):
@@ -145,6 +180,9 @@ class SearchDialog(QDialog):
         self._cancel: Cancellation | None = None
         self._busy = False
         self._count = 0
+        self._generation = 0
+        self._done_received = False
+        self._thread_stopped = False
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -215,15 +253,15 @@ class SearchDialog(QDialog):
     def _run_search(self) -> None:
         """Kick off the configured search on a worker thread.
 
-        Returns immediately; results stream in via :meth:`_on_batch` and the
-        run is finalised in :meth:`_on_done`. Use :meth:`wait_for_search`
+        Returns immediately; generation-tagged results stream into the GUI
+        and the run is finalised after both its terminal result and thread
+        exit arrive. Use :meth:`wait_for_search`
         (tests) to block until the walk completes.
         """
         # A fresh press supersedes any in-flight walk: cancel it and block
         # until its thread has actually stopped, so we never run two walks at
-        # once. The old thread/worker delete themselves via deleteLater wired
-        # on thread.finished, so we just drop our references to them here —
-        # the C++ side outlives the Python wrapper until that event runs.
+        # once. The old worker schedules its deletion before its event loop
+        # exits and the old thread deletes itself after stopping.
         if self.is_searching:
             self._request_cancel()
             self.wait_for_search()
@@ -236,19 +274,34 @@ class SearchDialog(QDialog):
         case_sensitive = self.cb_case.isChecked()
 
         self._cancel = Cancellation()
+        self._generation += 1
+        generation = self._generation
+        self._done_received = False
+        self._thread_stopped = False
         worker = _SearchWorker(
-            self._root, pattern, content, hidden, case_sensitive, self._cancel
+            self._root,
+            pattern,
+            content,
+            hidden,
+            case_sensitive,
+            self._cancel,
+            generation,
         )
-        worker.batch.connect(self._on_batch)
-        worker.done.connect(self._on_done)
+        # Never call QObject.sender() for queued signals from a short-lived
+        # worker.  The native sender may already have been deleted by the time
+        # the GUI dequeues the signal, making sender() a use-after-free hazard
+        # in PyQt.  A monotonic run token rejects stale signals without
+        # dereferencing their sender.
+        worker.tagged_batch.connect(self._accept_batch)
+        worker.tagged_done.connect(self._accept_done)
         thread = run_in_thread_for(worker)
-        # Flip the busy flag off only once the thread has truly stopped, so
-        # wait_for_search() and the supersede path can't race a half-stopped
-        # thread. We bind the *specific* worker/thread into the slot so a
-        # stale finish can never clear the flag for a newer run.
-        thread.finished.connect(
-            lambda t=thread, w=worker: self._on_thread_finished(t, w)
-        )
+        # Flip the busy flag off only after the tagged terminal outcome and
+        # the native thread stop have both reached the GUI. The QObject relay
+        # is parented to this dialog, so deleting the dialog automatically
+        # disconnects a finish that is still queued.
+        finish_relay = _ThreadFinishRelay(self, generation)
+        thread._qfileman_finish_relay = finish_relay  # type: ignore[attr-defined]
+        thread.finished.connect(finish_relay.deliver)
         self._worker = worker
         self._thread = thread
         self._busy = True
@@ -257,6 +310,11 @@ class SearchDialog(QDialog):
         self.search_btn.setText("Cancel")
 
     def _on_batch(self, rows: list) -> None:
+        """Compatibility slot used by direct-signal tests.
+
+        Production connections use :meth:`_accept_batch` and never inspect a
+        potentially deleted queued-signal sender.
+        """
         # Identity-gate: accept rows only from the *current* worker. A
         # superseded worker that outlived wait_for_search()'s timeout could
         # still have queued batches in flight; checking the emitter (not just
@@ -267,6 +325,14 @@ class SearchDialog(QDialog):
         # have stopped just before its final queued rows are delivered.
         if self.sender() is not self._worker:
             return
+        self._append_batch(rows)
+
+    def _accept_batch(self, generation: int, rows: list) -> None:
+        if generation != self._generation:
+            return
+        self._append_batch(rows)
+
+    def _append_batch(self, rows: list) -> None:
         for display, path in rows:
             item = QListWidgetItem(display)
             item.setData(Qt.ItemDataRole.UserRole, path)
@@ -274,6 +340,7 @@ class SearchDialog(QDialog):
         self._count += len(rows)
 
     def _on_done(self, count: int, truncated: bool) -> None:
+        """Compatibility slot used by direct-signal tests."""
         # Same identity-gate as _on_batch: a stale worker's terminal status
         # must not overwrite the current search's count.
         # As with batches, a valid queued done signal may be delivered just
@@ -281,6 +348,16 @@ class SearchDialog(QDialog):
         # current until another search starts, so it is the sufficient gate.
         if self.sender() is not self._worker:
             return
+        self._record_done(count, truncated)
+
+    def _accept_done(self, generation: int, count: int, truncated: bool) -> None:
+        if generation != self._generation:
+            return
+        self._record_done(count, truncated)
+        self._done_received = True
+        self._finish_if_complete()
+
+    def _record_done(self, count: int, truncated: bool) -> None:
         self._count = count
         suffix = " (truncated)" if truncated else ""
         plural = "es" if count != 1 else ""
@@ -291,17 +368,21 @@ class SearchDialog(QDialog):
             self._cancel.cancel()
         self.status_label.setText("Cancelled")
 
-    def _on_thread_finished(self, thread, worker) -> None:
+    def _on_thread_finished(self, generation: int) -> None:
         """Finalise once the worker thread has fully stopped.
 
-        Only the *current* thread clears the busy flag; a late finish from a
-        superseded run is ignored. We don't null the Python references here —
-        doing so during the thread's own finish emission can trigger a
-        synchronous ``QThread`` destruction that deadlocks the GUI thread.
-        The objects free themselves via ``deleteLater`` (wired in
-        :func:`run_in_thread_for`); we just drop the busy flag and reset UI.
+        Only the current generation contributes to completion; a late finish
+        from a superseded run is ignored. The busy flag remains set until its
+        queued terminal outcome has also been delivered.
         """
-        if thread is not self._thread:
+        if generation != self._generation:
+            return
+        self._thread_stopped = True
+        self._finish_if_complete()
+
+    def _finish_if_complete(self) -> None:
+        """Publish idle only after result delivery and native thread exit."""
+        if not (self._done_received and self._thread_stopped):
             return
         self._busy = False
         self.search_btn.setText("Search")
@@ -338,10 +419,9 @@ class SearchDialog(QDialog):
 def run_in_thread_for(worker: _SearchWorker):
     """Start a :class:`_SearchWorker` on a fresh thread.
 
-    Mirrors :func:`qfileman.worker.run_in_thread` (same teardown rules: delete
-    the worker only after the thread has stopped, and pin the thread in the
-    shared registry so it can't be collected mid-run) but drives the search
-    worker's own ``run``/``finished``.
+    For this streaming search worker, schedule deletion in its affinity
+    thread when the worker finishes, delete the thread wrapper after the
+    native thread stops, and pin both until shutdown completes.
     """
     from PyQt6.QtCore import QThread
 
@@ -351,11 +431,11 @@ def run_in_thread_for(worker: _SearchWorker):
     worker.moveToThread(thread)
     thread.started.connect(worker.run)
     worker.finished.connect(thread.quit)
-    # Delete the worker only after the thread has actually stopped — deleting
-    # it on worker.finished (while it still lives on the running thread) is a
-    # use-after-free hazard.
+    # Schedule this search worker's deferred deletion from its own terminal
+    # signal, while it still has worker-thread affinity. Generation-tagged GUI
+    # signals make any independently queued final result safe after deletion.
+    worker.finished.connect(worker.deleteLater)
     thread._qfileman_worker = worker  # type: ignore[attr-defined]
-    thread.finished.connect(worker.deleteLater)
     thread.finished.connect(thread.deleteLater)
     _LIVE.add(thread)
     thread.finished.connect(lambda t=thread: _LIVE.discard(t))
