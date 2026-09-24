@@ -1,3 +1,9 @@
+> **Moved.** This repository is frozen and archived. Development continues in
+> [qdistro/qdistro](https://github.com/qdistro/qdistro/tree/main/qdfileman) under
+> `qdfileman/`. Its full history up to `920aa45e8` is also preserved there on
+> branch [`legacy/multirepo/qdfileman`](https://github.com/qdistro/qdistro/tree/legacy/multirepo/qdfileman).
+> This repository was renamed from `qdfileman` to `legacy-qdfileman`.
+
 # QFileMan
 
 Qt file manager with plugin support, inspired by qnotebook and qterminator.
